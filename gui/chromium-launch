@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-exec /usr/local/bin/chromium \
+# Chromium writes its profile and its crash database under HOME. A sandbox
+# whose root file system is read-only, as Cella runs one on Kubernetes, has a
+# HOME it cannot write, and Chromium then exits at start. The profile moves
+# under TMPDIR, which every such sandbox mounts writable.
+if [[ ! -w "${HOME}" ]]; then
+  HOME="${TMPDIR:-/tmp}/chromium-home"
+  export HOME
+  mkdir -p "${HOME}"
+fi
+
+exec "${CHROMIUM:-/usr/local/bin/chromium}" \
   --no-sandbox \
   --disable-dev-shm-usage \
   --disable-gpu \

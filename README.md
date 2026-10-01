@@ -42,7 +42,9 @@ everything in the base is in both.
 - Xvfb on display `:0`, the mutter window manager, x11vnc, and websockify
   serving the noVNC web client on port `6080`.
 - Chrome for Testing as `chromium`, and `chromium-launch`, which starts it
-  with flags suited to a container.
+  with flags suited to a container. Where the home directory is read-only,
+  as in a sandbox with a read-only root file system, `chromium-launch` keeps
+  the browser profile under `$TMPDIR` (or `/tmp`) instead.
 - xdotool, xdpyinfo, ImageMagick, socat, and DejaVu, Noto CJK, and Noto
   Color Emoji fonts.
 
