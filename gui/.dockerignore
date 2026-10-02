@@ -7,4 +7,5 @@
 !session.sh
 !gui-browser
 !gui-desktop
-!desktop/
+!desktop/tint2rc
+!desktop/applications/
