@@ -11,10 +11,84 @@ if [[ ! -w "${HOME}" ]]; then
   mkdir -p "${HOME}"
 fi
 
-exec "${CHROMIUM:-/usr/local/bin/chromium}" \
-  --no-sandbox \
-  --disable-dev-shm-usage \
-  --disable-gpu \
-  --use-gl=swiftshader \
-  --user-data-dir="${HOME}/.chromium" \
-  "$@"
+flags=(
+  --no-sandbox
+  --disable-dev-shm-usage
+  --disable-gpu
+  --use-gl=swiftshader
+  --no-first-run
+  --no-default-browser-check
+  --user-data-dir="${HOME}/.chromium"
+)
+
+# A sandbox whose traffic leaves through an authenticating proxy, as Cella's
+# egress gateway is, gets the proxy as https_proxy with the credential in the
+# URL. Command-line clients send that credential; Chromium reads the address
+# and ignores the credential, so it would ask a person for one. The browser is
+# given the address alone and an extension that answers that proxy's
+# challenge, once per request, with the credential, which stays in a file
+# only this user reads rather than on the command line.
+proxy="${https_proxy:-${HTTPS_PROXY:-${http_proxy:-${HTTP_PROXY:-}}}}"
+if [[ -n "${proxy}" ]]; then
+  extension="${TMPDIR:-/tmp}/chromium-proxy-sign-in"
+  server="$(PROXY="${proxy}" EXTENSION="${extension}" python3 - <<'PY'
+import json, os, urllib.parse
+
+raw = os.environ["PROXY"]
+url = urllib.parse.urlsplit(raw if "://" in raw else "http://" + raw)
+host, port = url.hostname or "", url.port or (443 if url.scheme == "https" else 80)
+print(f"{url.scheme or 'http'}://{host}:{port}")
+if url.username is None:
+    raise SystemExit(0)
+credentials = {
+    "username": urllib.parse.unquote(url.username),
+    "password": urllib.parse.unquote(url.password or ""),
+}
+directory = os.environ["EXTENSION"]
+os.makedirs(directory, mode=0o700, exist_ok=True)
+os.chmod(directory, 0o700)
+manifest = {
+    "manifest_version": 3,
+    "name": "Sandbox proxy sign-in",
+    "version": "1",
+    "permissions": ["webRequest", "webRequestAuthProvider", "tabs"],
+    "host_permissions": ["<all_urls>"],
+    "background": {"service_worker": "background.js"},
+}
+# A page opened before the extension starts met the challenge unanswered, so
+# the extension reloads the open pages once when it starts.
+background = f"""const proxy = {json.dumps({"host": host, "port": port})};
+const credentials = {json.dumps(credentials)};
+const answered = new Set();
+chrome.webRequest.onAuthRequired.addListener(details => {{
+  const from = details.challenger || {{}};
+  if (!details.isProxy || from.host !== proxy.host || from.port !== proxy.port || answered.has(details.requestId)) return {{}};
+  answered.add(details.requestId);
+  return {{ authCredentials: credentials }};
+}}, {{ urls: ["<all_urls>"] }}, ["blocking"]);
+chrome.webRequest.onCompleted.addListener(details => answered.delete(details.requestId), {{ urls: ["<all_urls>"] }});
+chrome.webRequest.onErrorOccurred.addListener(details => answered.delete(details.requestId), {{ urls: ["<all_urls>"] }});
+chrome.tabs.query({{}}, tabs => {{
+  for (const tab of tabs) if (/^https?:/.test(tab.url || tab.pendingUrl || "")) chrome.tabs.reload(tab.id);
+}});
+"""
+for name, body in (("manifest.json", json.dumps(manifest)), ("background.js", background)):
+    path = os.path.join(directory, name)
+    temporary = path + ".new"
+    with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as out:
+        out.write(body)
+    os.replace(temporary, path)
+print(f"extension={directory}")
+PY
+)"
+  flags+=(--proxy-server="${server%%$'\n'*}")
+  if [[ "${server}" == *$'\n'extension=* ]]; then
+    flags+=(--load-extension="${server##*$'\n'extension=}")
+  fi
+  bypass="${no_proxy:-${NO_PROXY:-}}"
+  if [[ -n "${bypass}" ]]; then
+    flags+=(--proxy-bypass-list="${bypass//,/;}")
+  fi
+fi
+
+exec "${CHROMIUM:-/usr/local/bin/chromium}" "${flags[@]}" "$@"

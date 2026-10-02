@@ -29,7 +29,7 @@ test_read_only_home() {
     home="${tmp}/home"
     mkdir -p "$home" "${tmp}/run"
     chmod 0555 "$home"
-    out="$(HOME="$home" TMPDIR="${tmp}/run" CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch about:blank)"
+    out="$(env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy HOME="$home" TMPDIR="${tmp}/run" CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch about:blank)"
     if grep -qx "HOME=${tmp}/run/chromium-home" <<<"$out" \
         && grep -qx -- "--user-data-dir=${tmp}/run/chromium-home/.chromium" <<<"$out" \
         && [[ -d "${tmp}/run/chromium-home" ]] \
@@ -48,7 +48,7 @@ test_writable_home() {
     local name="chromium-launch: a writable HOME keeps the profile there"
     local tmp out
     tmp="$(mktemp -d)"
-    out="$(HOME="$tmp" CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch)"
+    out="$(env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy HOME="$tmp" CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch)"
     if grep -qx "HOME=${tmp}" <<<"$out" && grep -qx -- "--user-data-dir=${tmp}/.chromium" <<<"$out"; then
         pass "$name"
     else
@@ -57,9 +57,62 @@ test_writable_home() {
     rm -rf "$tmp"
 }
 
+# A proxy whose URL carries the credential, as Cella's egress gateway is
+# handed to a sandbox, must reach Chromium as the address alone, with an
+# extension that holds the decoded credential in files only this user reads.
+# Chromium ignores a credential in the URL and asks a person for one.
+test_proxy_credential() {
+    local name="chromium-launch: a proxy credential reaches Chromium through an extension, not the command line"
+    local tmp out ext mode
+    tmp="$(mktemp -d)"
+    out="$(env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY HOME="$tmp" TMPDIR="$tmp" \
+        https_proxy='http://sandbox:s3cr%2Ft@gw.example:3128' no_proxy='127.0.0.1,localhost' \
+        CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch about:blank)"
+    ext="${tmp}/chromium-proxy-sign-in"
+    mode="$(stat -f '%Lp' "$ext" 2>/dev/null || stat -c '%a' "$ext")"
+    if grep -qx -- "--proxy-server=http://gw.example:3128" <<<"$out" \
+        && grep -qx -- "--load-extension=${ext}" <<<"$out" \
+        && grep -qx -- "--proxy-bypass-list=127.0.0.1;localhost" <<<"$out" \
+        && ! grep -q 's3cr' <<<"$out" \
+        && grep -qF '"password": "s3cr/t"' "${ext}/background.js" \
+        && grep -qF '"host": "gw.example", "port": 3128' "${ext}/background.js" \
+        && grep -qF '"webRequestAuthProvider"' "${ext}/manifest.json" \
+        && [[ "$mode" == "700" ]]; then
+        pass "$name"
+    else
+        fail "$name (mode ${mode}; got: $(tr '\n' ' ' <<<"$out"))"
+    fi
+    rm -rf "$tmp"
+}
+
+# A proxy with no credential is passed as the address, with no extension, and
+# a sandbox with no proxy at all gets neither flag. Both skip the first-run
+# screens, which ask a person to sign in to Chromium.
+test_proxy_without_credential() {
+    local name="chromium-launch: no credential, no extension; no proxy, no proxy flags"
+    local tmp with without
+    tmp="$(mktemp -d)"
+    with="$(env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u no_proxy -u NO_PROXY HOME="$tmp" TMPDIR="$tmp" \
+        https_proxy='http://gw.example:3128' CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch)"
+    without="$(env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy HOME="$tmp" TMPDIR="$tmp" \
+        CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch)"
+    if grep -qx -- "--proxy-server=http://gw.example:3128" <<<"$with" \
+        && ! grep -q -- "--load-extension" <<<"$with" \
+        && [[ ! -e "${tmp}/chromium-proxy-sign-in" ]] \
+        && ! grep -q -- "--proxy-server" <<<"$without" \
+        && grep -qx -- "--no-first-run" <<<"$without"; then
+        pass "$name"
+    else
+        fail "$name (with: $(tr '\n' ' ' <<<"$with"); without: $(tr '\n' ' ' <<<"$without"))"
+    fi
+    rm -rf "$tmp"
+}
+
 echo "chromium-launch:"
 test_read_only_home
 test_writable_home
+test_proxy_credential
+test_proxy_without_credential
 
 if [[ "$FAILURES" -gt 0 ]]; then
     echo "${FAILURES} failure(s)"
