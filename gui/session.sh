@@ -33,6 +33,22 @@ gui_writable_state() {
     mkdir -p "${XDG_CONFIG_HOME}" "${XDG_CACHE_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}"
 }
 
+# gui_capped runs a command with the soft open-file limit at most 4096. A
+# program that closes every descriptor up to that limit before it starts
+# another, as tint2 does, spends minutes in a container whose limit is a
+# billion, which a Kubernetes node's runtime grants. The hard limit is left
+# as it is, so a program that needs more descriptors raises its own.
+gui_capped() {
+    local hard
+    hard="$(ulimit -Hn)"
+    if [[ "${hard}" == unlimited ]] || (( hard > 4096 )); then
+        ulimit -Sn 4096
+    else
+        ulimit -Sn "${hard}"
+    fi
+    exec "$@"
+}
+
 gui_pids=()
 
 # gui_supervise starts a command in the background and starts it again

@@ -22,7 +22,7 @@ stubs() {
     mkdir -p "${dir}/bin"
     printf '#!/usr/bin/env bash\nexit %s\n' "$display" > "${dir}/bin/xdpyinfo"
     printf '#!/usr/bin/env bash\necho "$*" >> "%s/browser.log"\n' "$dir" > "${dir}/bin/chromium-launch"
-    printf '#!/usr/bin/env bash\necho "$*" >> "%s/taskbar.log"\nexec sleep 300\n' "$dir" > "${dir}/bin/tint2"
+    printf '#!/usr/bin/env bash\necho "$*" >> "%s/taskbar.log"\necho "nofile $(ulimit -Sn)" >> "%s/taskbar.log"\nexec sleep 300\n' "$dir" "$dir" > "${dir}/bin/tint2"
     chmod 0755 "${dir}/bin/"*
 }
 
@@ -87,23 +87,30 @@ test_no_display() {
     rm -rf "$tmp"
 }
 
-# The desktop starts the taskbar from its own configuration, by path, and a
-# maximized browser at the given address.
+# The desktop starts the taskbar from its own configuration, by path, under
+# an open-file limit of at most 4096, and a maximized browser at the given
+# address. tint2 closes every descriptor up to the limit before it starts a
+# program, which under a container's billion takes minutes per launch.
 test_desktop_starts_taskbar_and_browser() {
     local name="gui-desktop: the taskbar starts from its configuration, beside a browser"
     local tmp pid
     tmp="$(mktemp -d)"
     stubs "$tmp" 0
-    GUI_TINT2RC=/etc/xdg/tint2/gui-desktop.tint2rc run "$tmp" bash ./gui-desktop https://example.com
+    # The limit starts above the cap, as a container's does, so the cap is
+    # what brings the taskbar's down.
+    GUI_TINT2RC=/etc/xdg/tint2/gui-desktop.tint2rc run "$tmp" bash -c 'ulimit -Sn 10240 && exec bash ./gui-desktop https://example.com'
     pid=$RUN_PID
     sleep 1
     kill -TERM "$pid"
+    local nofile
+    nofile="$(sed -n 's/^nofile //p' "${tmp}/taskbar.log" 2>/dev/null | head -1)"
     if grep -qx -- '-c /etc/xdg/tint2/gui-desktop.tint2rc' "${tmp}/taskbar.log" 2>/dev/null \
+        && [[ "$nofile" =~ ^[0-9]+$ ]] && (( nofile <= 4096 )) \
         && grep -qx -- '--start-maximized https://example.com' "${tmp}/browser.log" 2>/dev/null \
         && stopped "$pid" && ! pgrep -f "${tmp}/bin" >/dev/null; then
         pass "$name"
     else
-        fail "$name ($(tr '\n' ' ' < "${tmp}/stderr"))"
+        fail "$name (nofile ${nofile:-none}; $(tr '\n' ' ' < "${tmp}/stderr"))"
         kill -KILL "$pid" 2>/dev/null
     fi
     rm -rf "$tmp"
