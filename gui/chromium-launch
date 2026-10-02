@@ -11,8 +11,11 @@ if [[ ! -w "${HOME}" ]]; then
   mkdir -p "${HOME}"
 fi
 
+# --test-type keeps Chromium from covering each window with a warning that
+# --no-sandbox is unsupported; a sandbox's own isolation is the boundary.
 flags=(
   --no-sandbox
+  --test-type
   --disable-dev-shm-usage
   --disable-gpu
   --use-gl=swiftshader

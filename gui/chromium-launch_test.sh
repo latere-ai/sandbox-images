@@ -100,7 +100,8 @@ test_proxy_without_credential() {
         && ! grep -q -- "--load-extension" <<<"$with" \
         && [[ ! -e "${tmp}/chromium-proxy-sign-in" ]] \
         && ! grep -q -- "--proxy-server" <<<"$without" \
-        && grep -qx -- "--no-first-run" <<<"$without"; then
+        && grep -qx -- "--no-first-run" <<<"$without" \
+        && grep -qx -- "--test-type" <<<"$without"; then
         pass "$name"
     else
         fail "$name (with: $(tr '\n' ' ' <<<"$with"); without: $(tr '\n' ' ' <<<"$without"))"
