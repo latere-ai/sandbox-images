@@ -1,0 +1,10 @@
+# The command takes no %F: tint2 17.0.1 aborts on it when it reads the
+# launcher, and a taskbar launcher opens no files.
+[Desktop Entry]
+Type=Application
+Name=Text editor
+Comment=Edit text files
+Exec=mousepad
+Icon=text-editor
+Terminal=false
+Categories=Utility;TextEditor;

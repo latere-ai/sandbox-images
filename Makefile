@@ -17,6 +17,7 @@ $(CONTEXTS):
 test:
 	bash catalog_test.sh
 	bash gui/chromium-launch_test.sh
+	bash gui/session_test.sh
 
 clean:
 	RUNTIME=$(RUNTIME) ./catalog.sh clean

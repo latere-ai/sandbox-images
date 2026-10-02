@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# gui-desktop [url...]: a desktop to work in on the sandbox's display. A
+# taskbar at the bottom lists the open windows and launches the Browser, a
+# Terminal, Files and a Text editor, and a maximized browser opens at the
+# given addresses. The taskbar and the browser are each started again when
+# they exit. It is a workload's command, so it runs until the workload stops.
+set -euo pipefail
+
+# shellcheck source=gui/session.sh
+source "${GUI_SESSION:-/usr/local/bin/gui-session}"
+
+gui_wait_for_display gui-desktop
+gui_writable_state
+gui_supervise taskbar tint2 -c "${GUI_TINT2RC:-/etc/xdg/tint2/gui-desktop.tint2rc}"
+gui_supervise browser chromium-launch --start-maximized "$@"
+gui_run_supervised

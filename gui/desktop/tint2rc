@@ -1,0 +1,69 @@
+# The taskbar gui-desktop starts: launchers for the desktop's programs on the
+# left, one button per open window, and the clock. tint2 reads this file by
+# path, so a read-only home directory does not keep it from starting.
+
+# Background 1: the panel.
+rounded = 0
+border_width = 0
+background_color = #2e3440 100
+border_color = #000000 0
+
+# Background 2: the button of the window that has focus.
+rounded = 4
+border_width = 0
+background_color = #4c566a 100
+border_color = #000000 0
+
+panel_items = LTC
+panel_size = 100% 36
+panel_margin = 0 0
+panel_padding = 6 4 6
+panel_background_id = 1
+panel_position = bottom center horizontal
+panel_layer = top
+panel_monitor = all
+strut_policy = follow_size
+wm_menu = 0
+panel_dock = 0
+autohide = 0
+
+taskbar_mode = single_desktop
+taskbar_padding = 0 0 6
+taskbar_background_id = 0
+taskbar_name = 0
+
+task_text = 1
+task_icon = 1
+task_centered = 0
+task_maximum_size = 220 28
+task_padding = 8 2 6
+task_font = DejaVu Sans 9
+task_font_color = #d8dee9 100
+task_active_font_color = #eceff4 100
+task_background_id = 0
+task_active_background_id = 2
+mouse_left = toggle_iconify
+mouse_middle = none
+mouse_right = close
+
+launcher_padding = 2 2 6
+launcher_background_id = 0
+launcher_icon_size = 24
+launcher_icon_theme = Tango
+launcher_icon_theme_override = 1
+launcher_tooltip = 1
+launcher_item_app = /usr/share/applications/gui-browser.desktop
+launcher_item_app = /usr/share/applications/gui-terminal.desktop
+launcher_item_app = /usr/share/applications/gui-files.desktop
+launcher_item_app = /usr/share/applications/gui-editor.desktop
+
+time1_format = %H:%M
+time1_font = DejaVu Sans 9
+clock_font_color = #d8dee9 100
+clock_padding = 8 0
+clock_background_id = 0
+
+tooltip_show_timeout = 0.5
+tooltip_hide_timeout = 0.1
+tooltip_font = DejaVu Sans 9
+tooltip_font_color = #eceff4 100

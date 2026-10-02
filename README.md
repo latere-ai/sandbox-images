@@ -44,7 +44,17 @@ everything in the base is in both.
 - Chrome for Testing as `chromium`, and `chromium-launch`, which starts it
   with flags suited to a container. Where the home directory is read-only,
   as in a sandbox with a read-only root file system, `chromium-launch` keeps
-  the browser profile under `$TMPDIR` (or `/tmp`) instead.
+  the browser profile under `$TMPDIR` (or `/tmp`) instead. Behind a proxy
+  whose `https_proxy` URL carries a credential, as a Cella sandbox's egress
+  gateway does, it hands Chromium the proxy address and signs in for it, so
+  no one is asked for the proxy's password.
+- Two commands that start something on the display and keep it running:
+  `gui-browser [url...]`, one maximized browser that opens again when it is
+  closed, and `gui-desktop [url...]`, a taskbar of the open windows with
+  Browser, Terminal (lxterminal), Files (pcmanfm) and Text editor (mousepad)
+  launchers, beside a browser. Either is a container's or a sandbox's
+  command; with neither, the display stays empty until something is
+  started on it.
 - xdotool, xdpyinfo, ImageMagick, socat, and DejaVu, Noto CJK, and Noto
   Color Emoji fonts.
 
@@ -117,6 +127,12 @@ docker run --rm -it \
   ghcr.io/latere-ai/sandbox-gui:latest \
   chromium-launch https://example.com
 ```
+
+For a desktop to work in rather than one program, pass `gui-desktop`; for a
+browser that stays open, `gui-browser`. In a Cella sandbox the display comes
+from the desktop Cella runs beside the workload, and the same two commands are
+the sandbox's command: `command: [gui-desktop]` or
+`command: [gui-browser, https://example.com]`.
 
 **The VNC password.** On first start the entrypoint generates a password,
 writes it to `/home/agent/.vncpass` with mode 0600, and never prints it. Read

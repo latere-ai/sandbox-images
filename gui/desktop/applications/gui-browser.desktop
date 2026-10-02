@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Browser
+Comment=Browse the web through the sandbox's egress
+Exec=chromium-launch %U
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;

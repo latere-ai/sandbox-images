@@ -20,7 +20,7 @@ Run `make hooks` once after cloning; it points git at `.githooks`.
 | [`catalog.yaml`](catalog.yaml) | the list of images: name, build context, platforms, parent, label, description, resource hints. The Makefile targets, the CI build matrices, `test.sh`, and the published `catalog.json` all derive from it, and its fields are documented inline |
 | [`catalog.sh`](catalog.sh) | everything derived from the catalog: `lint`, `filters`, `matrix`, `compose`, `baseref`, `build`, `clean` |
 | `base/`, `gui/`, `harness/` | one build context per image |
-| [`test.sh`](test.sh), [`catalog_test.sh`](catalog_test.sh), [`gui/entrypoint_test.sh`](gui/entrypoint_test.sh), [`gui/chromium-launch_test.sh`](gui/chromium-launch_test.sh) | the four test suites |
+| [`test.sh`](test.sh), [`catalog_test.sh`](catalog_test.sh), [`gui/entrypoint_test.sh`](gui/entrypoint_test.sh), [`gui/chromium-launch_test.sh`](gui/chromium-launch_test.sh), [`gui/session_test.sh`](gui/session_test.sh) | the five test suites |
 | [`specs/`](specs/) | design records for changes to the catalog and the image contract |
 
 ## Building
@@ -47,7 +47,7 @@ passed as the `BASE_IMAGE` build argument.
 
 | Command | What it covers | Needs |
 | --- | --- | --- |
-| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; and where the GUI image's `chromium-launch` keeps the browser profile when the home directory is read-only | `yq`, `jq` |
+| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
 | `bash gui/entrypoint_test.sh` | VNC password provisioning in the GUI image. It sources the script directly and needs no container | `bash` |
 | `bash test.sh [tag]` | the published images at a tag (default `latest`): every cataloged image pulls and runs, and each image's runtime contract holds (tools on `PATH`, user, home, working directory, prompt, display defaults, pinned CLI versions) | a container runtime, `yq` |
 

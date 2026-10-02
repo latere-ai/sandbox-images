@@ -10,6 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11vnc \
     mutter \
     dbus-x11 \
+    tint2 \
+    lxterminal \
+    pcmanfm \
+    mousepad \
+    tango-icon-theme \
     xdotool \
     x11-utils \
     x11-apps \
@@ -61,6 +66,16 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/gui-entrypoint
 COPY --chmod=0755 vncpass.sh /usr/local/bin/gui-vncpass
 COPY --chmod=0755 supervisor.sh /usr/local/bin/gui-supervisor
 COPY --chmod=0755 chromium-launch /usr/local/bin/chromium-launch
+
+# The workload commands that start something on the display: gui-browser, one
+# browser, and gui-desktop, a taskbar with the desktop's programs and a
+# browser. Each draws on the display this image's entrypoint or a desktop
+# beside the sandbox provides, and gui-session is the part they share.
+COPY --chmod=0644 session.sh /usr/local/bin/gui-session
+COPY --chmod=0755 gui-browser /usr/local/bin/gui-browser
+COPY --chmod=0755 gui-desktop /usr/local/bin/gui-desktop
+COPY --chmod=0644 desktop/tint2rc /etc/xdg/tint2/gui-desktop.tint2rc
+COPY --chmod=0644 desktop/applications/ /usr/share/applications/
 
 # The non-root `agent` user (UID 1000) is created by the base image.
 USER agent
