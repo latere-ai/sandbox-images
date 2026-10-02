@@ -35,7 +35,7 @@ test_password_not_logged() {
     fi
     secret="$(tr -d '\n' < "${tmp}/.vncpass")"
 
-    mode="$(stat -f '%Lp' "${tmp}/.vncpass" 2>/dev/null || stat -c '%a' "${tmp}/.vncpass")"
+    mode="$(stat -c '%a' "${tmp}/.vncpass" 2>/dev/null || stat -f '%Lp' "${tmp}/.vncpass")"
     if [[ "$mode" != "600" ]]; then
         fail "vncpass: password file mode is ${mode}, want 600"
     else

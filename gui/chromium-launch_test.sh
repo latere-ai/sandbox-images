@@ -69,7 +69,7 @@ test_proxy_credential() {
         https_proxy='http://sandbox:s3cr%2Ft@gw.example:3128' no_proxy='127.0.0.1,localhost' \
         CHROMIUM="$(make_stub "$tmp")" bash ./chromium-launch about:blank)"
     ext="${tmp}/chromium-proxy-sign-in"
-    mode="$(stat -f '%Lp' "$ext" 2>/dev/null || stat -c '%a' "$ext")"
+    mode="$(stat -c '%a' "$ext" 2>/dev/null || stat -f '%Lp' "$ext")"
     if grep -qx -- "--proxy-server=http://gw.example:3128" <<<"$out" \
         && grep -qx -- "--load-extension=${ext}" <<<"$out" \
         && grep -qx -- "--proxy-bypass-list=127.0.0.1;localhost" <<<"$out" \
