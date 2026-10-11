@@ -63,6 +63,9 @@ everything in the base is in both.
     `npx playwright install chromium` finds the browser there and returns at
     once. An ES module sees the installed copy after `npm link playwright`
     in its project, which needs no network either.
+  - Puppeteer starts the same browser. The `puppeteer` package finds it and
+    downloads none of its own; `puppeteer-core` takes
+    `executablePath: process.env.PUPPETEER_EXECUTABLE_PATH`.
   - A project that installs another Playwright version needs that version's
     browser, which it has to download. `playwright --version` names the
     version that needs none.

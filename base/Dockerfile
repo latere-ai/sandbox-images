@@ -309,6 +309,14 @@ RUN cd /opt/playwright/lib/node_modules/playwright && npm link && \
     ln -sf /usr/local/bin/playwright ~/.npm-global/bin/playwright && \
     rm -rf ~/.npm
 
+# Puppeteer downloads browsers of its own when it is installed, about 670 MB
+# into the home directory. It is told to skip that and to start the
+# installed Chromium through the chromium script, which adds the flags
+# Puppeteer does not. Only the `puppeteer` package reads these two
+# variables; `puppeteer-core` takes the path as `executablePath`.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/opt/playwright/bin/chromium
+
 # pip refuses to install into Ubuntu's Python, which apt manages. With the
 # refusal lifted, pip run as this user still cannot write the system
 # directories, so it installs for the user under ~/.local and leaves the apt

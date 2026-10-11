@@ -343,6 +343,35 @@ JS") || true
         && [[ "$out" == *"esm="[0-9]* ]] \
         && pass "ES module, network off: npm link playwright, then import" \
         || fail "ES module could not import the installed Playwright (got: $out)"
+
+    # Puppeteer, installed from the registry into a volume and then run with
+    # the network off. The install must not fetch Puppeteer's own browsers,
+    # and a launch with no arguments must start the installed Chromium. No
+    # version is named: a failure here that the image did not cause means the
+    # pinned browser has fallen behind the current Puppeteer.
+    read -r -d '' puppeteer_script <<'JS' || true
+const puppeteer = require('puppeteer');
+(async () => {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  await page.setContent('<button onclick="this.textContent = 1">0</button>');
+  await page.click('button');
+  console.log('puppeteer=' + await page.$eval('button', button => button.textContent) + ' ' + await browser.version());
+  await browser.close();
+})().catch(error => { console.error(error.message); process.exit(1); });
+JS
+    volume="sandbox-images-test-$$"
+    $RUNTIME volume create "$volume" >/dev/null
+    out=$(RUN_FLAGS="-v $volume:/workspace" run_in "$BASE" 'npm install --silent puppeteer && echo "own-browsers=$(ls ~/.cache/puppeteer 2>/dev/null | wc -l)"') \
+        && [[ "$out" == *"own-browsers=0"* ]] \
+        && pass "puppeteer: its install downloads no browser" \
+        || fail "puppeteer: its install downloaded a browser or failed (got: $out)"
+    out=$(RUN_FLAGS="-v $volume:/workspace" run_offline "$BASE" "node - <<'JS'
+$puppeteer_script
+JS") && [[ "$out" == *"puppeteer=1 "* ]] \
+        && pass "puppeteer, network off: starts the installed Chromium and clicks (${out#puppeteer=1 })" \
+        || fail "puppeteer could not start the installed Chromium (got: $out)"
+    $RUNTIME volume rm "$volume" >/dev/null 2>&1 || fail "could not remove the volume $volume"
 fi
 
 # --- GUI image ---
