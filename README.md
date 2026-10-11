@@ -40,8 +40,8 @@ everything in the base is in both.
   as they are.
 - **Charts, documents, and data**: matplotlib, NumPy, pandas, Pillow,
   ReportLab, pypdf, openpyxl, python-docx, Requests, Beautiful Soup, lxml,
-  and PyYAML, at the versions Ubuntu 24.04 packages, so a chart, a PDF, a
-  spreadsheet, or a Word file needs nothing installed first. For reading
+  and PyYAML, installed from Ubuntu 24.04's own packages, so a chart, a PDF,
+  a spreadsheet, or a Word file needs nothing installed first. For reading
   PDFs there are poppler's command-line tools, among them `pdftotext`,
   `pdftoppm`, and `pdfinfo`. matplotlib writes image and PDF files and opens
   no window; set `MPLBACKEND` to choose another backend.
