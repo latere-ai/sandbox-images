@@ -57,14 +57,16 @@ everything in the base is in both.
   and that Playwright is installed beside it under `/opt/playwright`.
   - `playwright` is on `PATH`, and `require('playwright')` works from any
     directory, with no project and no network.
-  - `chromium` starts the same browser directly, for example
+  - `chromium` starts that build directly, for example
     `chromium --headless --screenshot=page.png page.html`.
   - `npx playwright ...` runs the installed copy, so
     `npx playwright install chromium` finds the browser there and returns at
     once. An ES module sees the installed copy after `npm link playwright`
-    in its project, which needs no network either.
-  - Puppeteer starts the same browser. The `puppeteer` package finds it and
-    downloads none of its own; `puppeteer-core` takes
+    in its project, which needs no network either. Both rely on a link under
+    `~/.npm-global`, so a volume mounted over the home directory takes them
+    away; `playwright` and `require('playwright')` do not depend on it.
+  - Puppeteer starts it too. The `puppeteer` package finds it and downloads
+    no browser of its own; `puppeteer-core` takes
     `executablePath: process.env.PUPPETEER_EXECUTABLE_PATH`.
   - A project that installs another Playwright version needs that version's
     browser, which it has to download. `playwright --version` names the
