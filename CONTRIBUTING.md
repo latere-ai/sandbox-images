@@ -49,7 +49,7 @@ passed as the `BASE_IMAGE` build argument.
 | --- | --- | --- |
 | `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
 | `bash gui/entrypoint_test.sh` | VNC password provisioning in the GUI image. It sources the script directly and needs no container | `bash` |
-| `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, display defaults, pinned CLI versions) | a container runtime, `yq` |
+| `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, the base image's Python libraries, PDF tools, and fonts, display defaults, pinned CLI versions) | a container runtime, `yq` |
 
 `test.sh` pulls every image from the registry before checking it, so it
 verifies what is published, and a local build under the same name is replaced

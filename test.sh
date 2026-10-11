@@ -86,6 +86,11 @@ if selected sandbox-base; then
     out=$(run_in "$BASE" 'python3 --version') && [[ "$out" == *"Python"* ]] \
         && pass "python3: $out" || fail "python3 not found"
 
+    # `python` is the command scripts and people try first; an image with
+    # only `python3` fails them before any work starts.
+    out=$(run_in "$BASE" 'python --version') && [[ "$out" == "Python 3."* ]] \
+        && pass "python: $out" || fail "python does not run Python 3 (got: $out)"
+
     for tool in gopls dlv goimports golangci-lint staticcheck gosec; do
         run_in "$BASE" "which $tool" >/dev/null 2>&1 \
             && pass "go tool: $tool" || fail "go tool missing: $tool"
@@ -127,6 +132,52 @@ if selected sandbox-base; then
 
     run_in "$BASE" 'test -w /workspace' \
         && pass "workspace writable" || fail "/workspace not writable"
+
+    # The libraries for charts, documents, and data import with nothing
+    # installed at run time.
+    for module in matplotlib numpy pandas PIL reportlab pypdf openpyxl docx requests bs4 lxml yaml; do
+        run_in "$BASE" "python -c 'import $module'" >/dev/null 2>&1 \
+            && pass "python library: $module" || fail "python library missing: $module"
+    done
+
+    out=$(run_in "$BASE" 'pdftotext -v') && [[ "$out" == *"pdftotext version"* ]] \
+        && pass "pdftotext: ${out%%$'\n'*}" || fail "pdftotext not found"
+
+    # Fonts for Chinese, Japanese, and Korean. fontconfig has to choose Noto
+    # CJK's face for each language: WenQuanYi Micro Hei is there for
+    # reportlab and matplotlib, and its glyphs are the Chinese forms.
+    out=$(run_in "$BASE" 'fc-list :lang=zh family | sort -u') && [[ "$out" == *"Noto Sans CJK SC"* ]] \
+        && pass "fonts: $(wc -l <<<"$out" | tr -d ' ') families cover Chinese" \
+        || fail "fonts: fc-list finds no Noto Sans CJK SC (got: $out)"
+
+    for face in zh-cn:SC zh-tw:TC ja:JP ko:KR; do
+        out=$(run_in "$BASE" "fc-match sans-serif:lang=${face%:*}") && [[ "$out" == *"Noto Sans CJK ${face#*:}"* ]] \
+            && pass "fonts: ${face%:*} text uses Noto Sans CJK ${face#*:}" \
+            || fail "fonts: ${face%:*} text does not use Noto Sans CJK ${face#*:} (got: $out)"
+    done
+
+    # The Chinese text the document checks write and read back.
+    doc_title="北京与上海气温"
+
+    # A PDF whose Chinese text uses a font the file does not embed, as many
+    # PDFs from the web do. poppler reads and draws it only with its CJK
+    # character maps installed.
+    read -r -d '' cid_script <<PY || true
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfgen import canvas
+
+pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+page = canvas.Canvas("cid.pdf")
+page.setFont("STSong-Light", 18)
+page.drawString(72, 760, "$doc_title")
+page.save()
+PY
+    out=$(run_in "$BASE" "cd /tmp && python - <<'PY' && pdftotext cid.pdf - && pdftoppm -png -r 50 cid.pdf cid && test -s cid-1.png
+$cid_script
+PY") && [[ "$out" == *"$doc_title"* && "$out" != *"Syntax Error"* ]] \
+        && pass "poppler reads and draws a PDF with a CJK font that is not embedded" \
+        || fail "poppler cannot read a PDF with a CJK font that is not embedded (got: $out)"
 fi
 
 # --- GUI image ---

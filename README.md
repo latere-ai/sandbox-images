@@ -12,7 +12,7 @@ on its own under Docker or Podman.
 
 | Image | Reference | Platforms | Contents |
 | --- | --- | --- | --- |
-| `sandbox-base` | `ghcr.io/latere-ai/sandbox-base` | amd64, arm64 | Ubuntu 24.04, Go and Go tooling, Node.js 22, Python 3, and a non-root `agent` user |
+| `sandbox-base` | `ghcr.io/latere-ai/sandbox-base` | amd64, arm64 | Ubuntu 24.04, Go and Go tooling, Node.js 22, Python 3 with libraries for charts, documents, and data, and a non-root `agent` user |
 | `sandbox-gui` | `ghcr.io/latere-ai/sandbox-gui` | amd64 | the base plus an X display, the mutter window manager, a VNC server behind noVNC, and Chrome for Testing |
 | `sandbox-harness` | `ghcr.io/latere-ai/sandbox-harness` | amd64, arm64 | the base plus the Claude Code and Codex CLIs |
 
@@ -33,7 +33,18 @@ everything in the base is in both.
 - **Node.js**: 22 from the NodeSource apt repository. `npm install -g`
   installs into `~/.npm-global`, which is on `PATH`, so it works without
   root.
-- **Python**: 3 with pip and venv.
+- **Python**: 3, as `python` and `python3`, with pip and venv.
+- **Charts, documents, and data**: matplotlib, NumPy, pandas, Pillow,
+  ReportLab, pypdf, openpyxl, python-docx, Requests, Beautiful Soup, lxml,
+  and PyYAML, at the versions Ubuntu 24.04 packages, so a chart, a PDF, a
+  spreadsheet, or a Word file needs nothing installed first. For reading
+  PDFs there are poppler's command-line tools, among them `pdftotext`,
+  `pdftoppm`, and `pdfinfo`.
+- **Fonts**: DejaVu, Liberation (the metrics of Arial, Times New Roman, and
+  Courier New), and Noto CJK for Chinese, Japanese, and Korean. ReportLab
+  embeds TrueType fonts only, which Noto CJK is not: for such text in a
+  PDF, register WenQuanYi Micro Hei from
+  `/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`.
 - **User**: `agent` (UID and GID 1000) with passwordless sudo, home
   `/home/agent`, working directory `/workspace`.
 

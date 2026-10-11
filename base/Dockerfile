@@ -102,6 +102,58 @@ RUN gpg --show-keys --with-colons --with-fingerprint /tmp/nodesource.gpg.key \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# --- Charts, documents, and data ---
+# What a chart, a PDF, a spreadsheet, or a Word file needs is in the image,
+# because a sandbox with a fraction of a CPU core takes minutes to install
+# it at run time. The libraries are Ubuntu's packages: they are built for the
+# system Python and import with no setup.
+#
+# python-is-python3 provides the `python` command, which scripts and people
+# use as often as `python3`. poppler-utils is pdftotext, pdftoppm, and
+# pdfinfo. poppler-data holds the character maps they need for PDFs whose
+# Chinese, Japanese, or Korean text uses a font the file does not embed; it
+# is a recommended package, which this install skips unless it is named.
+# fontconfig provides fc-list and fc-match, which show the fonts present.
+#
+# Fonts: DejaVu and Liberation cover Latin, Greek, and Cyrillic, and
+# Liberation has the metrics of Arial, Times New Roman, and Courier New.
+# Noto CJK covers Chinese, Japanese, and Korean for everything that finds
+# fonts through fontconfig. Two libraries here cannot rely on it: reportlab
+# embeds TrueType outlines only, and Noto CJK's are PostScript; matplotlib
+# reads only the first face of a font collection, which in Noto CJK is the
+# Japanese one. WenQuanYi Micro Hei is a TrueType font with Chinese glyph
+# forms that both can use. Its fontconfig rule is removed, because the rule
+# puts the font ahead of Noto CJK for Japanese and Korean text in every
+# other program; the build fails if fontconfig stops choosing Noto CJK.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python-is-python3 \
+    python3-matplotlib \
+    python3-numpy \
+    python3-pandas \
+    python3-pil \
+    python3-reportlab \
+    python3-pypdf \
+    python3-openpyxl \
+    python3-docx \
+    python3-requests \
+    python3-bs4 \
+    python3-lxml \
+    python3-yaml \
+    poppler-utils \
+    poppler-data \
+    fontconfig \
+    fonts-dejavu-core \
+    fonts-liberation \
+    fonts-noto-cjk \
+    fonts-wqy-microhei \
+    && rm /etc/fonts/conf.d/65-wqy-microhei.conf \
+    && fc-cache -f \
+    && for face in zh-cn:SC zh-tw:TC ja:JP ko:KR; do \
+        fc-match "sans-serif:lang=${face%:*}" | grep -q "Noto Sans CJK ${face#*:}" \
+            || { echo "fontconfig does not choose Noto Sans CJK ${face#*:} for ${face%:*}" >&2; exit 1; }; \
+    done \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # --- Interactive prompt: instance-aware hostname ---
 # The sandbox runtime injects CELLA_HOST into each interactive session
 # with the human-friendly instance name. A pooled container keeps the
