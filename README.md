@@ -12,7 +12,7 @@ on its own under Docker or Podman.
 
 | Image | Reference | Platforms | Contents |
 | --- | --- | --- | --- |
-| `sandbox-base` | `ghcr.io/latere-ai/sandbox-base` | amd64, arm64 | Ubuntu 24.04, Go and Go tooling, Node.js 22, Python 3 with libraries for charts, documents, and data, and a non-root `agent` user |
+| `sandbox-base` | `ghcr.io/latere-ai/sandbox-base` | amd64, arm64 | Ubuntu 24.04, Go and Go tooling, Node.js 22, Python 3 with libraries for charts, documents, and data, a headless Chromium with Playwright, and a non-root `agent` user |
 | `sandbox-gui` | `ghcr.io/latere-ai/sandbox-gui` | amd64 | the base plus an X display, the mutter window manager, a VNC server behind noVNC, and Chrome for Testing |
 | `sandbox-harness` | `ghcr.io/latere-ai/sandbox-harness` | amd64, arm64 | the base plus the Claude Code and Codex CLIs |
 
@@ -46,11 +46,27 @@ everything in the base is in both.
   `pdftoppm`, and `pdfinfo`. matplotlib writes image and PDF files and opens
   no window; set `MPLBACKEND` to choose another backend.
 - **Fonts**: DejaVu, Liberation (the metrics of Arial, Times New Roman, and
-  Courier New), and Noto CJK for Chinese, Japanese, and Korean. A matplotlib
-  chart draws Chinese, Japanese, and Korean text with no font setting.
-  ReportLab embeds TrueType fonts only, which Noto CJK is not: for such
-  text in a PDF, register WenQuanYi Micro Hei from
+  Courier New), Noto CJK for Chinese, Japanese, and Korean, and Noto Color
+  Emoji. A matplotlib chart draws Chinese, Japanese, and Korean text with no
+  font setting. ReportLab embeds TrueType fonts only, which Noto CJK is not:
+  for such text in a PDF, register WenQuanYi Micro Hei from
   `/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`.
+- **Browser**: Chromium, headless, ready with nothing to download. It is the
+  build that [Playwright](https://playwright.dev) drives at the version
+  pinned by `PLAYWRIGHT_VERSION` in [`base/Dockerfile`](base/Dockerfile),
+  and that Playwright is installed beside it under `/opt/playwright`.
+  - `playwright` is on `PATH`, and `require('playwright')` works from any
+    directory, with no project and no network.
+  - `chromium` starts the same browser directly, for example
+    `chromium --headless --screenshot=page.png page.html`.
+  - A project that installs another Playwright version needs that version's
+    browser, which it has to download. `playwright --version` names the
+    version that needs none.
+
+  The browser starts as `agent` with no flags from the caller, and under a
+  read-only root file system that has a writable `/tmp`. It runs in 256 MiB
+  of memory, where its first start in a new container can take ten seconds
+  and more; with 384 MiB that start takes a second or two.
 - **User**: `agent` (UID and GID 1000) with passwordless sudo, home
   `/home/agent`, working directory `/workspace`.
 
@@ -64,7 +80,9 @@ everything in the base is in both.
   the browser profile under `$TMPDIR` (or `/tmp`) instead. Behind a proxy
   whose `https_proxy` URL carries a credential, as a Cella sandbox's egress
   gateway does, it hands Chromium the proxy address and signs in for it, so
-  no one is asked for the proxy's password.
+  no one is asked for the proxy's password. In this image `chromium` is that
+  Chrome for Testing; Playwright and Puppeteer keep the headless browser
+  from the base image.
 - Two commands that start something on the display and keep it running:
   `gui-browser [url...]`, one maximized browser that opens again when it is
   closed, and `gui-desktop [url...]`, a taskbar of the open windows with

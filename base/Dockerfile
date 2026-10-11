@@ -213,9 +213,89 @@ RUN userdel -r ubuntu 2>/dev/null || true && \
     mkdir -p /workspace && \
     chown ${USERNAME}:${USERNAME} /workspace
 
+# --- Headless browser ---
+# A web page built in a sandbox is tested in a real browser, and a sandbox
+# cannot be relied on to fetch one: the download takes minutes on a fraction
+# of a CPU core, and a restricted network may not allow its host. So the
+# image carries Chromium and what it needs to start.
+#
+# These are the shared libraries the browser binaries link against that the
+# image did not have yet. They are named one by one instead of installed by
+# `playwright install --with-deps`, which adds an X server and fonts that
+# would change which font draws Chinese, Japanese, and Korean text. libgbm1
+# brings Mesa and LLVM with it, about 180 MB that a headless browser never
+# loads; Ubuntu packages them as its dependencies. fonts-noto-color-emoji is
+# here because without it the browser draws most emoji as nothing at all.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libasound2t64 \
+    libatk-bridge2.0-0t64 \
+    libatk1.0-0t64 \
+    libatspi2.0-0t64 \
+    libcups2t64 \
+    libdbus-1-3 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    fonts-noto-color-emoji \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Playwright is pinned, and the browser build follows from the pin: each
+# Playwright release drives one Chromium revision, so a new
+# PLAYWRIGHT_VERSION brings a new browser. `playwright install chromium`
+# fetches three things, and all three stay, because that command looks for
+# all three: Chromium, the headless shell that `chromium.launch()` starts by
+# default, and the ffmpeg that records video. With them present, the same
+# command run later in a sandbox finds nothing to download.
+#
+# It all lives under /opt/playwright, outside the home directory, so a volume
+# mounted over the home does not hide the browser and a read-only home does
+# not stop it. The tree belongs to the sandbox user for three reasons:
+# Playwright takes a lock in the browser directory even when it has nothing
+# to install, npm sets the mode of a package's command when it links the
+# package into a project, and a project on another Playwright version can
+# add its own browser revision beside this one when the network allows. The
+# owner is set in the step that writes the files, because a later layer that
+# changed it would hold a second copy of every file.
+#
+# /opt/playwright/chrome names the Chromium binary, whose directory differs
+# by revision and by architecture. The build fails if a binary lacks a
+# shared library, so a browser build that needs one more is caught here and
+# not in a sandbox.
+ARG PLAYWRIGHT_VERSION=1.64.0
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright/browsers
+RUN NPM_CONFIG_PREFIX=/opt/playwright npm install -g playwright@${PLAYWRIGHT_VERSION} && \
+    npm cache clean --force && \
+    /opt/playwright/bin/playwright install chromium && \
+    chrome="$(node -e "console.log(require('/opt/playwright/lib/node_modules/playwright').chromium.executablePath())")" && \
+    test -x "${chrome}" && \
+    ln -s "${chrome}" /opt/playwright/chrome && \
+    if find "${PLAYWRIGHT_BROWSERS_PATH}" -type f -perm -u+x -exec ldd {} + 2>/dev/null | grep 'not found'; then \
+        echo 'a browser binary lacks a shared library' >&2; exit 1; \
+    fi && \
+    chown -R ${USERNAME}:${USERNAME} /opt/playwright
+
+# The two commands are scripts; each explains itself. playwright is the
+# installed command line, kept usable where the browser directory is
+# read-only. chromium is the browser with the flags a container needs. A
+# child image with a browser of its own may point /usr/local/bin/chromium
+# at it, so the script itself lives under /opt/playwright, where its path
+# stays the same.
+COPY --chmod=0755 playwright /usr/local/bin/playwright
+COPY --chmod=0755 chromium /opt/playwright/bin/chromium
+RUN ln -s /opt/playwright/bin/chromium /usr/local/bin/chromium
+
 USER ${USERNAME}
 ENV NPM_CONFIG_PREFIX=/home/${USERNAME}/.npm-global
 ENV PATH=$PATH:/home/${USERNAME}/.npm-global/bin
+
+# `require('playwright')` finds the installed Playwright from any directory,
+# with no project, through NODE_PATH. Node reads the variable for CommonJS
+# only.
+ENV NODE_PATH=/opt/playwright/lib/node_modules
 
 # pip refuses to install into Ubuntu's Python, which apt manages. With the
 # refusal lifted, pip run as this user still cannot write the system

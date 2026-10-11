@@ -43,10 +43,14 @@ if [[ -n "$LOCAL" ]]; then PULL_POLICY="--pull=never"; fi
 # so exact-match assertions see only the command's output.
 run_in() {
     local image="$1" out rc; shift
-    out=$($RUNTIME run --rm $PULL_POLICY --entrypoint bash "$image" -c "$*" 2>&1); rc=$?
+    out=$($RUNTIME run --rm $PULL_POLICY ${RUN_FLAGS:-} --entrypoint bash "$image" -c "$*" 2>&1); rc=$?
     printf '%s\n' "$out" | grep -v '^WARNING: image platform'
     return $rc
 }
+
+# run_offline is run_in with the network off: what passes here passed with
+# nothing downloaded. RUN_FLAGS adds runtime flags to either.
+run_offline() { RUN_FLAGS="--network none ${RUN_FLAGS:-}" run_in "$@"; }
 
 run_in_root() {
     local image="$1"; shift
@@ -239,6 +243,85 @@ PY") && [[ "$out" == *"$doc_title"* && "$out" != *"Syntax Error"* ]] \
         || { [[ "$out" == *"externally-managed-environment"* ]] \
             && pass "sudo pip install: still refused" \
             || fail "sudo pip install failed for another reason (got: $out)"; }
+
+    # The headless browser. The version pin lives only in the Dockerfile ARG;
+    # the installed Playwright has to report it.
+    PLAYWRIGHT_PIN=$(sed -n 's/^ARG PLAYWRIGHT_VERSION=//p' base/Dockerfile)
+
+    out=$(run_in "$BASE" 'playwright --version') && [[ "$out" == "Version $PLAYWRIGHT_PIN" ]] \
+        && pass "playwright: $out" || fail "playwright version (want $PLAYWRIGHT_PIN, got: $out)"
+
+    out=$(run_offline "$BASE" 'cd /tmp && printf "<h1>ok</h1>" > page.html && playwright screenshot file:///tmp/page.html shot.png && test -s shot.png && echo written') \
+        && [[ "$out" == *"written"* ]] \
+        && pass "playwright screenshot, network off: writes a PNG" \
+        || fail "playwright screenshot failed with the network off (got: $out)"
+
+    # A page with a button and a counter, loaded from a file by a script that
+    # requires Playwright from a directory with no project: the click has to
+    # change the count, and a 1280x800 screenshot has to come out. The second
+    # page is Chinese text and an emoji. The browser reports the font that
+    # drew each, and a font without the glyphs would show as another family.
+    read -r -d '' browser_script <<'JS' || true
+const fs = require('fs');
+const { chromium } = require('playwright');
+(async () => {
+  fs.writeFileSync('counter.html', `<p id="count">0</p><button id="add">Add one</button>
+<script>let n = 0; document.getElementById('add').onclick = () => { document.getElementById('count').textContent = String(++n); };</script>`);
+  fs.writeFileSync('text.html', '<html lang="zh-CN"><meta charset="utf-8"><h1>北京与上海气温</h1><p id="emoji">&#x1F680;</p></html>');
+  const browser = await chromium.launch();
+  console.log('browser=' + browser.version());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto('file://' + process.cwd() + '/counter.html');
+  await page.click('#add');
+  console.log('count=' + await page.textContent('#count'));
+  await page.screenshot({ path: 'counter.png' });
+  console.log('counter.png=' + fs.statSync('counter.png').size);
+  await page.goto('file://' + process.cwd() + '/text.html');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('DOM.enable');
+  await cdp.send('CSS.enable');
+  const { root } = await cdp.send('DOM.getDocument');
+  for (const selector of ['h1', '#emoji']) {
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+    console.log(selector + '=' + fonts.map(font => font.familyName).join(','));
+  }
+  await page.screenshot({ path: 'text.png' });
+  console.log('text.png=' + fs.statSync('text.png').size);
+  await browser.close();
+})().catch(error => { console.error(error.message); process.exit(1); });
+JS
+    out=$(run_offline "$BASE" "cd /tmp && node - <<'JS'
+$browser_script
+JS") || true
+    [[ "$out" == *"count=1"* && "$out" =~ counter\.png=([1-9][0-9]*) ]] \
+        && pass "browser, network off: a script loads a page, clicks, and takes a screenshot (${BASH_REMATCH[1]} bytes)" \
+        || fail "browser script failed with the network off (got: $out)"
+    [[ "$out" == *"h1=Noto Sans CJK SC"* && "$out" =~ text\.png=([1-9][0-9]*) ]] \
+        && pass "browser fonts: Chinese text is drawn with Noto Sans CJK SC" \
+        || fail "browser fonts: Chinese text is not drawn with Noto Sans CJK SC (got: $out)"
+    [[ "$out" == *"#emoji=Noto Color Emoji"* ]] \
+        && pass "browser fonts: an emoji is drawn with Noto Color Emoji" \
+        || fail "browser fonts: an emoji is not drawn with Noto Color Emoji (got: $out)"
+
+    # chromium on PATH is the browser Playwright installed and just started.
+    browser_version=$(sed -n 's/^browser=//p' <<<"$out")
+    out=$(run_in "$BASE" 'chromium --version') && [[ -n "$browser_version" && "$out" == *"$browser_version"* ]] \
+        && pass "chromium: $out" \
+        || fail "chromium is not the browser Playwright installed (want ${browser_version:-a version}, got: $out)"
+
+    out=$(run_offline "$BASE" 'cd /tmp && printf "<h1>ok</h1>" > page.html && chromium --headless --screenshot=shot.png file:///tmp/page.html && test -s shot.png && echo written') \
+        && [[ "$out" == *"written"* ]] \
+        && pass "chromium --headless --screenshot, network off: writes a PNG" \
+        || fail "chromium --headless --screenshot failed (got: $out)"
+
+    # A sandbox with a read-only root file system: the home directory and the
+    # browser directory cannot be written, /tmp can. The install command has
+    # to return at once all the same, and the browser has to start.
+    out=$(RUN_FLAGS="--read-only --tmpfs /tmp:rw,exec" run_offline "$BASE" 'cd /tmp && playwright install chromium && node -e "require(\"playwright\").chromium.launch().then(async b => { console.log(\"launched=\" + b.version()); await b.close(); })" && echo "seconds=$SECONDS"') \
+        && [[ "$out" == *"launched="* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
+        && pass "read-only root file system: playwright install returns at once and the browser starts (${BASH_REMATCH[1]} s)" \
+        || fail "read-only root file system: playwright install or the browser failed (got: $out)"
 fi
 
 # --- GUI image ---

@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# chromium [flag...] [url...]: the Chromium that Playwright installed in this
+# image, started with what a container needs. Playwright adds the same two
+# flags itself; this command is for Puppeteer and for a direct start such as
+# `chromium --headless --screenshot=page.png page.html`.
+#
+# --no-sandbox: Chromium's own sandbox needs to create a user namespace, which
+# a container is often not allowed to do, and without it the browser exits at
+# start. The container is the boundary around the page instead.
+#
+# --disable-dev-shm-usage: Chromium keeps shared memory in /dev/shm, which a
+# container runtime caps at 64 MiB by default, and a tab crashes when a page
+# needs more. With the flag the shared memory goes under /tmp.
+set -eu
+
+# Chromium writes its profile and its crash reports under HOME and exits at
+# start when it cannot. A sandbox whose root file system is read-only has a
+# HOME nobody can write, so the browser gets one under TMPDIR, which such a
+# sandbox mounts writable.
+if [ ! -w "${HOME:-/nonexistent}" ]; then
+    HOME="${TMPDIR:-/tmp}/chromium-home"
+    export HOME
+    mkdir -p "${HOME}"
+fi
+
+exec "${CHROMIUM_BINARY:-/opt/playwright/chrome}" --no-sandbox --disable-dev-shm-usage "$@"

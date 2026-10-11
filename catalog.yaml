@@ -21,7 +21,7 @@ images:
     context: base
     platforms: [linux/amd64, linux/arm64]
     label: Base
-    description: Ubuntu 24.04 with Go, Node.js 22, Python 3 with chart, document, and data libraries, and agent tooling.
+    description: Ubuntu 24.04 with Go, Node.js 22, Python 3 with chart, document, and data libraries, a headless browser, and agent tooling.
   - name: sandbox-gui
     context: gui
     platforms: [linux/amd64]
