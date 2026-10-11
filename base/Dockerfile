@@ -216,4 +216,14 @@ RUN userdel -r ubuntu 2>/dev/null || true && \
 USER ${USERNAME}
 ENV NPM_CONFIG_PREFIX=/home/${USERNAME}/.npm-global
 ENV PATH=$PATH:/home/${USERNAME}/.npm-global/bin
+
+# pip refuses to install into Ubuntu's Python, which apt manages. With the
+# refusal lifted, pip run as this user still cannot write the system
+# directories, so it installs for the user under ~/.local and leaves the apt
+# packages as installed: `pip install <package>` works with no flag and no
+# virtual environment. sudo does not pass the variable on, so
+# `sudo pip install` is refused as before. PIP_USER is left unset: it would
+# make pip fail inside a virtual environment.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+ENV PATH=$PATH:/home/${USERNAME}/.local/bin
 WORKDIR /workspace

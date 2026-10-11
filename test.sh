@@ -216,6 +216,29 @@ $cid_script
 PY") && [[ "$out" == *"$doc_title"* && "$out" != *"Syntax Error"* ]] \
         && pass "poppler reads and draws a PDF with a CJK font that is not embedded" \
         || fail "poppler cannot read a PDF with a CJK font that is not embedded (got: $out)"
+
+    # pip as agent installs for the user and leaves Ubuntu's packages in
+    # place: the new module comes from ~/.local, matplotlib still imports
+    # beside it, and the command the package installs is on PATH.
+    out=$(run_in "$BASE" 'pip install --quiet tabulate && python -c "import matplotlib, tabulate; print(tabulate.__file__)" && command -v tabulate') \
+        && [[ "$out" == *"/home/agent/.local/lib/"*"/home/agent/.local/bin/tabulate"* ]] \
+        && pass "pip install as agent: installs under ~/.local, matplotlib still imports" \
+        || fail "pip install as agent failed (got: $out)"
+
+    # A virtual environment still takes its own installs. Forcing every
+    # install to be a user install would make pip refuse here.
+    out=$(run_in "$BASE" 'python -m venv /tmp/venv && /tmp/venv/bin/pip install --quiet tabulate && /tmp/venv/bin/python -c "import tabulate; print(tabulate.__file__)"') \
+        && [[ "$out" == *"/tmp/venv/lib/"* ]] \
+        && pass "pip install in a virtual environment: installs into it" \
+        || fail "pip install in a virtual environment failed (got: $out)"
+
+    # sudo drops the setting that lets agent install, so root's pip still
+    # leaves the Python that apt manages alone.
+    out=$(run_in "$BASE" 'sudo pip install --quiet tabulate') \
+        && fail "sudo pip install wrote into the system Python" \
+        || { [[ "$out" == *"externally-managed-environment"* ]] \
+            && pass "sudo pip install: still refused" \
+            || fail "sudo pip install failed for another reason (got: $out)"; }
 fi
 
 # --- GUI image ---

@@ -34,6 +34,10 @@ everything in the base is in both.
   installs into `~/.npm-global`, which is on `PATH`, so it works without
   root.
 - **Python**: 3, as `python` and `python3`, with pip and venv.
+  `pip install <package>` works without root and without a virtual
+  environment: it installs for the `agent` user into `~/.local`, whose `bin`
+  directory is on `PATH`, and leaves the Python packages Ubuntu installed
+  as they are.
 - **Charts, documents, and data**: matplotlib, NumPy, pandas, Pillow,
   ReportLab, pypdf, openpyxl, python-docx, Requests, Beautiful Soup, lxml,
   and PyYAML, at the versions Ubuntu 24.04 packages, so a chart, a PDF, a
@@ -95,8 +99,9 @@ docker run --rm -it \
   bash
 ```
 
-The shell runs as `agent`. To add a command-line tool, install it inside the
-container, for example `npm install -g <package>`.
+The shell runs as `agent`. To add a command-line tool or a library, install
+it inside the container, for example `npm install -g <package>` or
+`pip install <package>`.
 
 ### Harness
 
