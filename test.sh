@@ -156,8 +156,46 @@ if selected sandbox-base; then
             || fail "fonts: ${face%:*} text does not use Noto Sans CJK ${face#*:} (got: $out)"
     done
 
+    # A window on a display would block a script at plt.show() until someone
+    # closed it, so the configured backend only writes files.
+    out=$(run_in "$BASE" "python -c 'import matplotlib; print(matplotlib.rcParams[\"backend\"])'") && [[ "$out" == "agg" ]] \
+        && pass "matplotlib backend: $out" || fail "matplotlib backend is $out, expected agg"
+
     # The Chinese text the document checks write and read back.
     doc_title="北京与上海气温"
+
+    # A chart with a Chinese title, and a one-page PDF that carries the chart
+    # and the same title. The chart names no font, so the glyphs have to come
+    # from the image's matplotlib defaults: a glyph no font has is a warning,
+    # raised as an error here. The PDF embeds the TrueType CJK font, and
+    # pdftotext has to read the title back out of it.
+    read -r -d '' doc_script <<PY || true
+import os, warnings
+import matplotlib.pyplot as plt
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
+
+warnings.filterwarnings("error", message="Glyph .* missing")
+fig, ax = plt.subplots()
+ax.bar(["北京", "上海"], [12, 18])
+ax.set_title("$doc_title")
+fig.savefig("chart.png")
+
+pdfmetrics.registerFont(TTFont("cjk", "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"))
+page = canvas.Canvas("page.pdf")
+page.setFont("cjk", 18)
+page.drawString(72, 760, "$doc_title")
+page.drawImage("chart.png", 72, 380, width=440, height=330)
+page.save()
+for name in ("chart.png", "page.pdf"):
+    assert os.path.getsize(name) > 0, name
+PY
+    out=$(run_in "$BASE" "cd /tmp && python - <<'PY' && pdfinfo page.pdf | grep Pages && pdftotext page.pdf -
+$doc_script
+PY") && [[ "$out" =~ Pages:[[:space:]]+1 && "$out" == *"$doc_title"* ]] \
+        && pass "chart and PDF with a Chinese title: drawn, and the title reads back from the PDF" \
+        || fail "chart or PDF with a Chinese title failed (got: $out)"
 
     # A PDF whose Chinese text uses a font the file does not embed, as many
     # PDFs from the web do. poppler reads and draws it only with its CJK

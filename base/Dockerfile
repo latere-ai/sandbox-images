@@ -154,6 +154,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     done \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# matplotlib's defaults, in Ubuntu's /etc/matplotlibrc:
+#
+# font.family: the stock font, DejaVu Sans, has no Chinese, Japanese, or
+# Korean glyphs, so a chart title in those languages draws as empty boxes
+# until the script names another font. With the two fonts listed after the
+# generic family, matplotlib takes from them only the glyphs DejaVu Sans
+# lacks, and Latin text looks as it did.
+#
+# backend: Agg writes files and opens no window. Ubuntu's default, TkAgg,
+# opens one wherever a display exists, as in the GUI image, and a script
+# that calls plt.show() then blocks until someone closes the window.
+# MPLBACKEND still selects another backend for one process.
+#
+# python reads both settings back, so the build fails if the file changes
+# shape and an edit stops applying.
+RUN sed -i \
+        -e 's/^backend: .*/backend: Agg/' \
+        -e 's/^#font\.family: .*/font.family: sans-serif, WenQuanYi Micro Hei, Noto Sans CJK JP/' \
+        /etc/matplotlibrc && \
+    MPLCONFIGDIR=/tmp/mplconfig python3 -c "import matplotlib as m; \
+        assert m.rcParams['backend'].lower() == 'agg', m.rcParams['backend']; \
+        assert m.rcParams['font.family'] == ['sans-serif', 'WenQuanYi Micro Hei', 'Noto Sans CJK JP'], m.rcParams['font.family']" && \
+    rm -rf /tmp/mplconfig
+
 # --- Interactive prompt: instance-aware hostname ---
 # The sandbox runtime injects CELLA_HOST into each interactive session
 # with the human-friendly instance name. A pooled container keeps the

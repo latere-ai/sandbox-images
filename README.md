@@ -39,11 +39,13 @@ everything in the base is in both.
   and PyYAML, at the versions Ubuntu 24.04 packages, so a chart, a PDF, a
   spreadsheet, or a Word file needs nothing installed first. For reading
   PDFs there are poppler's command-line tools, among them `pdftotext`,
-  `pdftoppm`, and `pdfinfo`.
+  `pdftoppm`, and `pdfinfo`. matplotlib writes image and PDF files and opens
+  no window; set `MPLBACKEND` to choose another backend.
 - **Fonts**: DejaVu, Liberation (the metrics of Arial, Times New Roman, and
-  Courier New), and Noto CJK for Chinese, Japanese, and Korean. ReportLab
-  embeds TrueType fonts only, which Noto CJK is not: for such text in a
-  PDF, register WenQuanYi Micro Hei from
+  Courier New), and Noto CJK for Chinese, Japanese, and Korean. A matplotlib
+  chart draws Chinese, Japanese, and Korean text with no font setting.
+  ReportLab embeds TrueType fonts only, which Noto CJK is not: for such
+  text in a PDF, register WenQuanYi Micro Hei from
   `/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`.
 - **User**: `agent` (UID and GID 1000) with passwordless sudo, home
   `/home/agent`, working directory `/workspace`.
