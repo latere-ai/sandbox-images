@@ -322,6 +322,27 @@ JS") || true
         && [[ "$out" == *"launched="* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
         && pass "read-only root file system: playwright install returns at once and the browser starts (${BASH_REMATCH[1]} s)" \
         || fail "read-only root file system: playwright install or the browser failed (got: $out)"
+
+    # What someone types first, in a directory with no project and with the
+    # network off: npx has to find the installed Playwright, and the install
+    # command has to find the browser and return. Thirty seconds is far above
+    # the second or two this takes, and below the minute and more npx spends
+    # before it gives up on a registry it cannot reach.
+    for root in "writable" "read-only"; do
+        flags=""
+        if [[ "$root" == "read-only" ]]; then flags="--read-only --tmpfs /tmp:rw,exec"; fi
+        out=$(RUN_FLAGS="$flags" run_offline "$BASE" 'cd "$(mktemp -d)" && npx playwright --version && npx playwright install chromium && echo "seconds=$SECONDS"') \
+            && [[ "$out" == *"Version $PLAYWRIGHT_PIN"* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
+            && pass "npx playwright install chromium, network off, $root root: nothing to download (${BASH_REMATCH[1]} s)" \
+            || fail "npx playwright did not use the installed Playwright ($root root, got: $out)"
+    done
+
+    # An ES module does not see NODE_PATH. `npm link playwright` gives the
+    # project the installed copy, with the network off.
+    out=$(run_offline "$BASE" 'cd "$(mktemp -d)" && npm link playwright >/dev/null && printf "import { chromium } from \"playwright\";\nconst browser = await chromium.launch();\nconsole.log(\"esm=\" + browser.version());\nawait browser.close();\n" > check.mjs && node check.mjs') \
+        && [[ "$out" == *"esm="[0-9]* ]] \
+        && pass "ES module, network off: npm link playwright, then import" \
+        || fail "ES module could not import the installed Playwright (got: $out)"
 fi
 
 # --- GUI image ---

@@ -59,6 +59,10 @@ everything in the base is in both.
     directory, with no project and no network.
   - `chromium` starts the same browser directly, for example
     `chromium --headless --screenshot=page.png page.html`.
+  - `npx playwright ...` runs the installed copy, so
+    `npx playwright install chromium` finds the browser there and returns at
+    once. An ES module sees the installed copy after `npm link playwright`
+    in its project, which needs no network either.
   - A project that installs another Playwright version needs that version's
     browser, which it has to download. `playwright --version` names the
     version that needs none.

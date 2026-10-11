@@ -297,6 +297,18 @@ ENV PATH=$PATH:/home/${USERNAME}/.npm-global/bin
 # only.
 ENV NODE_PATH=/opt/playwright/lib/node_modules
 
+# npx looks for a command in the project and then in npm's global directory,
+# which for this user is in the home directory, and never on PATH. `npm link`
+# records the package there, so `npx playwright` finds it, and
+# `npm link playwright` in a project, which is how an ES module imports it,
+# has something to link. Without the record npx asks the registry, and with
+# the network off it gives up only after about seventy seconds. The command
+# npx then runs is pointed at the playwright script, so it behaves as
+# `playwright` does.
+RUN cd /opt/playwright/lib/node_modules/playwright && npm link && \
+    ln -sf /usr/local/bin/playwright ~/.npm-global/bin/playwright && \
+    rm -rf ~/.npm
+
 # pip refuses to install into Ubuntu's Python, which apt manages. With the
 # refusal lifted, pip run as this user still cannot write the system
 # directories, so it installs for the user under ~/.local and leaves the apt
