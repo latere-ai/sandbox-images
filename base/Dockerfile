@@ -276,7 +276,8 @@ RUN NPM_CONFIG_PREFIX=/opt/playwright npm install -g playwright@${PLAYWRIGHT_VER
     if find "${PLAYWRIGHT_BROWSERS_PATH}" -type f -perm -u+x -exec ldd {} + 2>/dev/null | grep 'not found'; then \
         echo 'a browser binary lacks a shared library' >&2; exit 1; \
     fi && \
-    chown -R ${USERNAME}:${USERNAME} /opt/playwright
+    chown -R ${USERNAME}:${USERNAME} /opt/playwright && \
+    rm -rf /tmp/node-compile-cache
 
 # The two commands are scripts; each explains itself. playwright is the
 # installed command line, kept usable where the browser directory is
@@ -307,7 +308,7 @@ ENV NODE_PATH=/opt/playwright/lib/node_modules
 # `playwright` does.
 RUN cd /opt/playwright/lib/node_modules/playwright && npm link && \
     ln -sf /usr/local/bin/playwright ~/.npm-global/bin/playwright && \
-    rm -rf ~/.npm
+    rm -rf ~/.npm /tmp/node-compile-cache
 
 # Puppeteer downloads browsers of its own when it is installed, about 670 MB
 # into the home directory. It is told to skip that and to start the
