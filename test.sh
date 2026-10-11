@@ -260,6 +260,13 @@ if selected sandbox-gui; then
             && pass "gui tool: $tool" || fail "gui tool missing: $tool"
     done
 
+    # chromium is Chrome for Testing at the version this image's Dockerfile
+    # pins, which is what chromium-launch starts, whatever command of that
+    # name the base image has.
+    CFT_PIN=$(sed -n 's/^ARG CFT_VERSION=//p' gui/Dockerfile)
+    out=$(run_in "$GUI" 'chromium --version') && [[ "$out" == *"$CFT_PIN"* ]] \
+        && pass "chromium: $out" || fail "chromium is not Chrome for Testing $CFT_PIN (got: $out)"
+
     out=$(run_in "$GUI" 'printf "%s %s" "$DISPLAY" "$SCREEN_GEOMETRY"') && [[ "$out" == ":0 1280x800x24" ]] \
         && pass "display defaults: $out" || fail "display defaults wrong: $out"
 

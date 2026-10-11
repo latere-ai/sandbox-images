@@ -47,6 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Chrome for Testing is the automation-grade Chromium build used by
 # computer-use stacks. Pin the version so image rebuilds are reproducible.
+# `chromium` on PATH names this build: the link replaces a command of that
+# name the base image may have, which would otherwise stop the build here.
 ARG CFT_VERSION=128.0.6613.119
 ARG TARGETARCH
 RUN set -eux; \
@@ -59,7 +61,7 @@ RUN set -eux; \
     unzip -q /tmp/chrome.zip -d /opt; \
     mv "/opt/chrome-${cft_arch}" /opt/chromium; \
     rm /tmp/chrome.zip; \
-    ln -s /opt/chromium/chrome /usr/local/bin/chromium; \
+    ln -sf /opt/chromium/chrome /usr/local/bin/chromium; \
     find /opt/chromium/locales -name '*.pak' ! -name 'en-US.pak' -delete
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/gui-entrypoint
