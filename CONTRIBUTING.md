@@ -49,12 +49,21 @@ passed as the `BASE_IMAGE` build argument.
 | --- | --- | --- |
 | `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
 | `bash gui/entrypoint_test.sh` | VNC password provisioning in the GUI image. It sources the script directly and needs no container | `bash` |
-| `bash test.sh [tag]` | the published images at a tag (default `latest`): every cataloged image pulls and runs, and each image's runtime contract holds (tools on `PATH`, user, home, working directory, prompt, display defaults, pinned CLI versions) | a container runtime, `yq` |
+| `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, display defaults, pinned CLI versions) | a container runtime, `yq` |
 
 `test.sh` pulls every image from the registry before checking it, so it
-verifies what is published. A local build under the same name is replaced by
-the pulled image. `RUNTIME` and `REGISTRY` override the runtime and the
-registry.
+verifies what is published, and a local build under the same name is replaced
+by the pulled image. To check a local build instead, set `LOCAL=1`: nothing is
+pulled, and an image that was not built locally fails its checks. Naming
+images after the tag checks only those, which is how one image is checked on a
+machine that cannot build them all:
+
+```bash
+make base
+LOCAL=1 bash test.sh latest sandbox-base
+```
+
+`RUNTIME` and `REGISTRY` override the runtime and the registry.
 
 On every push to `main` and every pull request, CI runs `./catalog.sh lint`
 and `make test`, and smoke-builds, without pushing, each image whose context
@@ -62,8 +71,9 @@ directory changed together with the images built on it. A child image in that
 smoke build uses its parent's published `latest`, not the parent built in the
 same run.
 `gui/entrypoint_test.sh` and `test.sh` run in no workflow: run the first
-before tagging a change to the GUI startup path, and run `bash test.sh vX.Y.Z`
-after a release publishes.
+before tagging a change to the GUI startup path, run `LOCAL=1 bash test.sh`
+on a local build before tagging a change to what an image holds, and run
+`bash test.sh vX.Y.Z` after a release publishes.
 
 ## Adding an image
 
