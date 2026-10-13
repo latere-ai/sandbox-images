@@ -5,6 +5,8 @@ work in them, one section per release.
 
 ## Unreleased
 
+## v0.0.21 - 2026-10-13
+
 ### Fixed
 
 - In `sandbox-base`, `npx playwright install --with-deps chromium` and
