@@ -353,8 +353,11 @@ JS") || true
         && pass "ES module, network off: npm link playwright, then import" \
         || fail "ES module could not import the installed Playwright (got: $out)"
 
-    # A browser with a window, on the virtual display Xvfb gives it.
-    out=$(run_offline "$BASE" 'xvfb-run -a node -e "require(\"playwright\").chromium.launch({ headless: false }).then(async b => { const p = await b.newPage(); console.log(\"headed=\" + await p.evaluate(() => screen.width)); await b.close(); })"') \
+    # A browser with a window, on the virtual display Xvfb gives it. As
+    # process 1, xvfb-run waits forever for Xvfb to say it is ready, so the
+    # command after it keeps bash as process 1 and xvfb-run its child, as a
+    # command in a sandbox is.
+    out=$(run_offline "$BASE" 'xvfb-run -a node -e "require(\"playwright\").chromium.launch({ headless: false }).then(async b => { const p = await b.newPage(); console.log(\"headed=\" + await p.evaluate(() => screen.width)); await b.close(); })" && echo exited') \
         && [[ "$out" =~ headed=([1-9][0-9]*) ]] \
         && pass "xvfb-run, network off: a browser with a window starts (screen ${BASH_REMATCH[1]} px wide)" \
         || fail "xvfb-run could not start a browser with a window (got: $out)"

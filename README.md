@@ -80,7 +80,9 @@ everything in the base is in both.
     `npx playwright install-deps` find those packages installed and succeed,
     also where sudo cannot run (see **User** below).
   - `xvfb-run` gives a browser with a window a virtual display, for example
-    `xvfb-run npx playwright test --headed`.
+    `xvfb-run npx playwright test --headed`. As a container's own command it
+    needs an init process, as `docker run --init` gives it: as process 1 it
+    waits forever for the display.
 
   The browser starts as `agent` with no flags from the caller, and under a
   read-only root file system that has a writable `/tmp`. It runs in 256 MiB
