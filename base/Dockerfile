@@ -250,7 +250,9 @@ RUN userdel -r ubuntu 2>/dev/null || true && \
 # install them itself: it runs without root, and where it sets the
 # no-new-privileges flag, sudo cannot run at all. With every one present,
 # the Chromium that a project's own Playwright downloads, at another
-# version, starts as this one does.
+# version, starts as this one does, and `playwright install --with-deps`
+# finds nothing to install (see the sudo script below). The build checks
+# them against Playwright's own list.
 #
 # libgbm1 brings Mesa and LLVM with it, about 180 MB that a headless browser
 # never loads; Ubuntu packages them as its dependencies.
@@ -318,14 +320,18 @@ RUN NPM_CONFIG_PREFIX=/opt/playwright npm install -g playwright@${PLAYWRIGHT_VER
     chown -R ${USERNAME}:${USERNAME} /opt/playwright && \
     rm -rf /tmp/node-compile-cache
 
-# The two commands are scripts; each explains itself. playwright is the
+# The three commands are scripts; each explains itself. playwright is the
 # installed command line, kept usable where the browser directory is
 # read-only. chromium is the browser with the flags a container needs. A
 # child image with a browser of its own may point /usr/local/bin/chromium
 # at it, so the script itself lives under /opt/playwright, where its path
-# stays the same.
+# stays the same. sudo comes ahead of the system's sudo on PATH: where sudo
+# cannot run, it lets an apt install with nothing to do succeed, which is
+# what `playwright install --with-deps` and `playwright install-deps` ask
+# for here.
 COPY --chmod=0755 playwright /usr/local/bin/playwright
 COPY --chmod=0755 chromium /opt/playwright/bin/chromium
+COPY --chmod=0755 sudo /usr/local/bin/sudo
 RUN ln -s /opt/playwright/bin/chromium /usr/local/bin/chromium
 
 USER ${USERNAME}
@@ -348,6 +354,15 @@ ENV NODE_PATH=/opt/playwright/lib/node_modules
 RUN cd /opt/playwright/lib/node_modules/playwright && npm link && \
     ln -sf /usr/local/bin/playwright ~/.npm-global/bin/playwright && \
     rm -rf ~/.npm /tmp/node-compile-cache
+
+# `playwright install-deps chromium` asks sudo to install Playwright's own
+# list of packages for its browser. The build makes that request as a
+# sandbox with the no-new-privileges flag would, with the system's sudo
+# replaced by a command that fails, so a package in the list that the image
+# lacks fails the build and not a `--with-deps` in a sandbox.
+RUN printf 'NoNewPrivs:\t1\n' > /tmp/no-new-privileges && \
+    SUDO_PROC_STATUS=/tmp/no-new-privileges SUDO_BINARY=/bin/false playwright install-deps chromium && \
+    rm -rf /tmp/no-new-privileges /tmp/node-compile-cache
 
 # Puppeteer downloads browsers of its own when it is installed, about 670 MB
 # into the home directory. It is told to skip that and to start the

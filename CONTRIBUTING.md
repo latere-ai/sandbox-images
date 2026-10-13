@@ -20,7 +20,7 @@ Run `make hooks` once after cloning; it points git at `.githooks`.
 | [`catalog.yaml`](catalog.yaml) | the list of images: name, build context, platforms, parent, label, description, resource hints. The Makefile targets, the CI build matrices, `test.sh`, and the published `catalog.json` all derive from it, and its fields are documented inline |
 | [`catalog.sh`](catalog.sh) | everything derived from the catalog: `lint`, `filters`, `matrix`, `compose`, `baseref`, `build`, `clean` |
 | `base/`, `gui/`, `harness/` | one build context per image |
-| [`test.sh`](test.sh), [`catalog_test.sh`](catalog_test.sh), [`base/browser_test.sh`](base/browser_test.sh), [`gui/entrypoint_test.sh`](gui/entrypoint_test.sh), [`gui/chromium-launch_test.sh`](gui/chromium-launch_test.sh), [`gui/session_test.sh`](gui/session_test.sh) | the six test suites |
+| [`test.sh`](test.sh), [`catalog_test.sh`](catalog_test.sh), [`base/browser_test.sh`](base/browser_test.sh), [`base/sudo_test.sh`](base/sudo_test.sh), [`gui/entrypoint_test.sh`](gui/entrypoint_test.sh), [`gui/chromium-launch_test.sh`](gui/chromium-launch_test.sh), [`gui/session_test.sh`](gui/session_test.sh) | the seven test suites |
 | [`specs/`](specs/) | design records for changes to the catalog and the image contract |
 
 ## Building
@@ -47,7 +47,7 @@ passed as the `BASE_IMAGE` build argument.
 
 | Command | What it covers | Needs |
 | --- | --- | --- |
-| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; the base image's `chromium` and `playwright` commands (the flags a container needs, and a home or a browser directory that cannot be written); the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
+| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; the base image's `chromium` and `playwright` commands (the flags a container needs, and a home or a browser directory that cannot be written) and its `sudo` (which apt installs succeed with nothing run where sudo cannot run, and that every other request reaches the system's sudo as given); the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
 | `bash gui/entrypoint_test.sh` | VNC password provisioning in the GUI image. It sources the script directly and needs no container | `bash` |
 | `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, the base image's Python libraries, PDF tools, fonts, `pip install`, and headless browser, display defaults, pinned CLI versions) | a container runtime, `yq`, and network access from the containers, because the `pip install` checks reach PyPI and the Puppeteer check the npm registry |
 
@@ -110,7 +110,7 @@ where:
 | --- | --- | --- |
 | Go | `GO_VERSION`, `GO_SHA256_amd64`, `GO_SHA256_arm64` in `base/Dockerfile` | take both digests from `https://go.dev/dl/?mode=json` and change them in the same commit as the version; the build fails on a mismatch |
 | gopls, delve, golangci-lint | `GOPLS_VERSION`, `DLV_VERSION`, `GOLANGCI_LINT_VERSION` in `base/Dockerfile` | the other Go tools install `@latest` at build time |
-| Playwright | `PLAYWRIGHT_VERSION` in `base/Dockerfile` | the Chromium build follows from it, and `test.sh` checks that the published image reports the version. A project that installs Playwright without naming a version gets the newest, which wants a browser this image has only while the pin is the newest too |
+| Playwright | `PLAYWRIGHT_VERSION` in `base/Dockerfile` | the Chromium build follows from it, and `test.sh` checks that the published image reports the version. A project that installs Playwright without naming a version gets the newest, which wants a browser this image has only while the pin is the newest too. The build fails when the new version's `playwright install-deps chromium` names a package the image lacks; add it to the browser's package list, or to the fonts if it is one |
 | Node.js | `NODE_MAJOR` in `base/Dockerfile` | the NodeSource signing key is vendored as `base/nodesource.gpg.key`, and the build checks its fingerprint against `NODE_KEY_FPR` |
 | Chrome for Testing | `CFT_VERSION` in `gui/Dockerfile` | amd64 only |
 | Claude Code, Codex | `CLAUDE_CODE_VERSION`, `CODEX_VERSION` in `harness/Dockerfile` | `test.sh` checks that the published CLIs report these versions |

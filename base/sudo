@@ -1,0 +1,120 @@
+#!/bin/sh
+#
+# sudo [option...] command...: the system's sudo, except for an apt install
+# that has nothing to do, in a sandbox where sudo cannot run.
+#
+# A sandbox that sets the no-new-privileges flag never lets sudo become root,
+# so sudo refuses every command there. A tool that installs its system
+# packages through sudo then fails even when the image already has every one
+# of them: `playwright install --with-deps` runs
+# `sudo -- sh -c "apt-get update&& apt-get install -y ... <packages>"` before
+# it downloads a browser, whatever is installed. So under that flag, an
+# `apt-get install` or `apt install` whose packages are all installed
+# already, by name or as a package another one provides, succeeds here with
+# nothing run, and an `apt-get update` before it is skipped, since there is
+# nothing to fetch. Everything else goes to the system's sudo, which says why
+# it cannot run: any other command, an install with a package that is
+# missing, and an install that pins a version or a release or passes an
+# option other than -y, -q, or --no-install-recommends. With root, or without
+# the flag, every command goes to the system's sudo as it is.
+set -eu
+
+real="${SUDO_BINARY:-/usr/bin/sudo}"
+status="${SUDO_PROC_STATUS:-/proc/self/status}"
+
+if [ "$(id -u)" = 0 ] || ! grep -Eq '^NoNewPrivs:[[:space:]]*1$' "$status" 2>/dev/null; then
+    exec "$real" "$@"
+fi
+
+# installed <package>: whether dpkg has the package installed, or an
+# installed package provides it, as libasound2t64 provides libasound2.
+installed() {
+    if [ "$(dpkg-query -W -f='${db:Status-Status}' "$1" 2>/dev/null)" = installed ]; then
+        return 0
+    fi
+    dpkg-query -W -f='${db:Status-Status} ${Provides}\n' 2>/dev/null \
+        | awk -v want="$1" '$1 == "installed" {
+            for (i = 2; i <= NF; i++) { name = $i; sub(/,$/, "", name); if (name == want) found = 1 }
+          } END { exit !found }'
+}
+
+# Words are split on blanks with globbing off, so a word is never matched
+# against file names.
+set -f
+missing=""
+packages=0
+
+# command_ok <word...>: whether one command is an apt update or an install
+# of plain package names with no option that changes what it does. The
+# packages it names that are not installed are added to $missing.
+command_ok() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -gt 1 ] || return 1
+    case "$1" in apt-get | apt) ;; *) return 1 ;; esac
+    shift
+    verb=""
+    for word in "$@"; do
+        case "$word" in
+            -y | -q | -qq | -yq | -qy | --yes | --assume-yes | --quiet | --no-install-recommends | --no-install-suggests) ;;
+            -*) return 1 ;;
+            *)
+                if [ -z "$verb" ]; then
+                    verb="$word"
+                    case "$verb" in update | install) ;; *) return 1 ;; esac
+                    continue
+                fi
+                [ "$verb" = install ] || return 1
+                case "$word" in *[!a-z0-9.+:-]*) return 1 ;; esac
+                packages=$((packages + 1))
+                installed "$word" || missing="$missing $word"
+                ;;
+        esac
+    done
+    [ -n "$verb" ]
+}
+
+# request_ok <argument...>: whether the arguments sudo was given, after its
+# own `--`, `-E`, `-H`, and `-n`, are apt commands command_ok accepts:
+# `sh -c` or `bash -c` with one script of commands joined by `&&`, or one
+# command given as words. A script with any character outside a plain
+# command line, such as a quote, a semicolon, a pipe, or a `$`, is not.
+request_ok() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --) shift; break ;;
+            -E | -H | -n) shift ;;
+            *) break ;;
+        esac
+    done
+    [ "$#" -gt 0 ] || return 1
+    if [ "$#" -eq 3 ] && { [ "$1" = sh ] || [ "$1" = bash ]; } && [ "$2" = -c ]; then
+        rest="$3"
+        plain='*[!A-Za-z0-9 .+:=_&-]*'
+        # shellcheck disable=SC2254 # the pattern comes from the variable
+        case "$rest" in $plain) return 1 ;; esac
+        while :; do
+            part="${rest%%&&*}"
+            # shellcheck disable=SC2086 # splitting the command into words is the point
+            command_ok $part || return 1
+            [ "$part" != "$rest" ] || return 0
+            rest="${rest#*&&}"
+        done
+    fi
+    command_ok "$@"
+}
+
+if request_ok "$@"; then
+    if [ "$packages" -gt 0 ] && [ -z "$missing" ]; then
+        echo "sudo: this sandbox cannot run commands as root; every package named is installed already, so nothing was run" >&2
+        exit 0
+    fi
+    if [ -n "$missing" ]; then
+        echo "sudo: not installed in this image:$missing" >&2
+    fi
+fi
+exec "$real" "$@"

@@ -245,8 +245,10 @@ PY") && [[ "$out" == *"$doc_title"* && "$out" != *"Syntax Error"* ]] \
             || fail "sudo pip install failed for another reason (got: $out)"; }
 
     # The headless browser. The version pin lives only in the Dockerfile ARG;
-    # the installed Playwright has to report it.
+    # the installed Playwright has to report it. PLAYWRIGHT_OTHER is another
+    # version, which a project of its own installs.
     PLAYWRIGHT_PIN=$(sed -n 's/^ARG PLAYWRIGHT_VERSION=//p' base/Dockerfile)
+    PLAYWRIGHT_OTHER="${PLAYWRIGHT_OTHER:-1.58.2}"
 
     out=$(run_in "$BASE" 'playwright --version') && [[ "$out" == "Version $PLAYWRIGHT_PIN" ]] \
         && pass "playwright: $out" || fail "playwright version (want $PLAYWRIGHT_PIN, got: $out)"
@@ -356,6 +358,24 @@ JS") || true
         && [[ "$out" =~ headed=([1-9][0-9]*) ]] \
         && pass "xvfb-run, network off: a browser with a window starts (screen ${BASH_REMATCH[1]} px wide)" \
         || fail "xvfb-run could not start a browser with a window (got: $out)"
+
+    # A sandbox where sudo cannot run, as with the no-new-privileges flag.
+    # Playwright's install of its browser's system packages asks sudo for
+    # them all the same; the image has every one, so the command has nothing
+    # to install and succeeds, with the network off.
+    out=$(RUN_FLAGS="--security-opt no-new-privileges" run_offline "$BASE" 'cd "$(mktemp -d)" && npx playwright install --with-deps chromium && npx playwright install-deps chromium && echo "with-deps=ok seconds=$SECONDS"') \
+        && [[ "$out" == *"with-deps=ok"* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
+        && pass "no new privileges, network off: playwright install --with-deps chromium and install-deps succeed (${BASH_REMATCH[1]} s)" \
+        || fail "no new privileges: playwright install --with-deps chromium failed (got: $out)"
+
+    # A project on another Playwright version, in a sandbox where sudo
+    # cannot run and HOME is not the image's home directory. Its Playwright
+    # downloads its own Chromium, a few hundred MB, and `--with-deps` and the
+    # browser have to work with what the image has.
+    out=$(RUN_FLAGS="--security-opt no-new-privileges -e HOME=/tmp/home" run_in "$BASE" "mkdir -p \$HOME && cd \$(mktemp -d) && npm init -y >/dev/null && npm install --silent --no-audit --no-fund -D playwright@${PLAYWRIGHT_OTHER} && npx playwright install --with-deps chromium >/dev/null && node -e 'const { chromium } = require(process.cwd() + \"/node_modules/playwright\"); chromium.launch().then(async b => { const p = await b.newPage(); await p.setContent(\"<title>other</title>\"); console.log(\"other=\" + await p.title() + \" \" + b.version()); await b.close(); })'") \
+        && [[ "$out" == *"other=other "* ]] \
+        && pass "playwright@${PLAYWRIGHT_OTHER} in a project, no new privileges: install --with-deps and its own Chromium start (${out##*other=other })" \
+        || fail "playwright@${PLAYWRIGHT_OTHER} in a project could not install or start its Chromium (got: $out)"
 
     # Puppeteer, installed from the registry into a volume and then run with
     # the network off. The install must not fetch Puppeteer's own browsers,
