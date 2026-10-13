@@ -47,9 +47,12 @@ everything in the base is in both.
   no window; set `MPLBACKEND` to choose another backend.
 - **Fonts**: DejaVu, Liberation (the metrics of Arial, Times New Roman, and
   Courier New), Noto CJK for Chinese, Japanese, and Korean, and Noto Color
-  Emoji. A matplotlib chart draws Chinese, Japanese, and Korean text with no
-  font setting. ReportLab embeds TrueType fonts only, which Noto CJK is not:
-  for such text in a PDF, register WenQuanYi Micro Hei from
+  Emoji, and the fonts Playwright installs for its browsers: WenQuanYi Zen
+  Hei, IPA Gothic, Loma for Thai, GNU FreeFont, and GNU Unifont. Noto CJK
+  draws Chinese, Japanese, and Korean text whether or not a language is set.
+  A matplotlib chart draws such text with no font setting. ReportLab embeds
+  TrueType fonts only, which Noto CJK is not: for such text in a PDF,
+  register WenQuanYi Micro Hei from
   `/usr/share/fonts/truetype/wqy/wqy-microhei.ttc`.
 - **Browser**: Chromium, headless, ready with nothing to download. It is the
   build that [Playwright](https://playwright.dev) drives at the version
@@ -68,16 +71,27 @@ everything in the base is in both.
   - Puppeteer starts it too. The `puppeteer` package finds it and downloads
     no browser of its own; `puppeteer-core` takes
     `executablePath: process.env.PUPPETEER_EXECUTABLE_PATH`.
-  - A project that installs another Playwright version needs that version's
-    browser, which it has to download. `playwright --version` names the
-    version that needs none.
+  - A project that installs another Playwright version downloads that
+    version's browser with `npx playwright install chromium`, which needs
+    the network, and the browser starts: the image has every system package
+    that Playwright's `install-deps chromium` names for Ubuntu 24.04.
+    `playwright --version` names the version that needs no download.
+  - `npx playwright install --with-deps chromium` and
+    `npx playwright install-deps` find those packages installed and succeed,
+    also where sudo cannot run (see **User** below).
+  - `xvfb-run` gives a browser with a window a virtual display, for example
+    `xvfb-run npx playwright test --headed`.
 
   The browser starts as `agent` with no flags from the caller, and under a
   read-only root file system that has a writable `/tmp`. It runs in 256 MiB
   of memory, where its first start in a new container can take ten seconds
   and more; with 384 MiB that start takes a second or two.
 - **User**: `agent` (UID and GID 1000) with passwordless sudo, home
-  `/home/agent`, working directory `/workspace`.
+  `/home/agent`, working directory `/workspace`. In a container started
+  with the no-new-privileges flag, sudo cannot become root. There,
+  `sudo apt-get install` of packages the image already has succeeds with
+  nothing run, which is what `playwright install --with-deps` asks for, and
+  every other sudo command fails as sudo does under that flag.
 
 **sandbox-gui**
 
