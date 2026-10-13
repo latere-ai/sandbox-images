@@ -259,15 +259,16 @@ PY") && [[ "$out" == *"$doc_title"* && "$out" != *"Syntax Error"* ]] \
     # A page with a button and a counter, loaded from a file by a script that
     # requires Playwright from a directory with no project: the click has to
     # change the count, and a 1280x800 screenshot has to come out. The second
-    # page is Chinese text and an emoji. The browser reports the font that
-    # drew each, and a font without the glyphs would show as another family.
+    # page is Chinese, Japanese, and Korean text and an emoji. The browser
+    # reports the font that drew each, and a font without the glyphs would
+    # show as another family.
     read -r -d '' browser_script <<'JS' || true
 const fs = require('fs');
 const { chromium } = require('playwright');
 (async () => {
   fs.writeFileSync('counter.html', `<p id="count">0</p><button id="add">Add one</button>
 <script>let n = 0; document.getElementById('add').onclick = () => { document.getElementById('count').textContent = String(++n); };</script>`);
-  fs.writeFileSync('text.html', '<html lang="zh-CN"><meta charset="utf-8"><h1>北京与上海气温</h1><p id="emoji">&#x1F680;</p></html>');
+  fs.writeFileSync('text.html', '<html lang="zh-CN"><meta charset="utf-8"><h1>北京与上海气温</h1><p id="ja" lang="ja">東京の気温</p><p id="ko" lang="ko">서울</p><p id="emoji">&#x1F680;</p></html>');
   const browser = await chromium.launch();
   console.log('browser=' + browser.version());
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -281,7 +282,7 @@ const { chromium } = require('playwright');
   await cdp.send('DOM.enable');
   await cdp.send('CSS.enable');
   const { root } = await cdp.send('DOM.getDocument');
-  for (const selector of ['h1', '#emoji']) {
+  for (const selector of ['h1', '#ja', '#ko', '#emoji']) {
     const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
     const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
     console.log(selector + '=' + fonts.map(font => font.familyName).join(','));
@@ -300,6 +301,12 @@ JS") || true
     [[ "$out" == *"h1=Noto Sans CJK SC"* && "$out" =~ text\.png=([1-9][0-9]*) ]] \
         && pass "browser fonts: Chinese text is drawn with Noto Sans CJK SC" \
         || fail "browser fonts: Chinese text is not drawn with Noto Sans CJK SC (got: $out)"
+    # The image has other fonts with Japanese and Korean glyphs, which
+    # Playwright's list of packages names; Noto CJK has to draw both all the
+    # same.
+    grep -qx '#ja=Noto Sans CJK JP' <<<"$out" && grep -qx '#ko=Noto Sans CJK KR' <<<"$out" \
+        && pass "browser fonts: Japanese and Korean text are drawn with Noto Sans CJK JP and KR" \
+        || fail "browser fonts: Japanese or Korean text is drawn with another font (got: $(grep '^#' <<<"$out" | tr '\n' ' '))"
     [[ "$out" == *"#emoji=Noto Color Emoji"* ]] \
         && pass "browser fonts: an emoji is drawn with Noto Color Emoji" \
         || fail "browser fonts: an emoji is not drawn with Noto Color Emoji (got: $out)"
@@ -343,6 +350,12 @@ JS") || true
         && [[ "$out" == *"esm="[0-9]* ]] \
         && pass "ES module, network off: npm link playwright, then import" \
         || fail "ES module could not import the installed Playwright (got: $out)"
+
+    # A browser with a window, on the virtual display Xvfb gives it.
+    out=$(run_offline "$BASE" 'xvfb-run -a node -e "require(\"playwright\").chromium.launch({ headless: false }).then(async b => { const p = await b.newPage(); console.log(\"headed=\" + await p.evaluate(() => screen.width)); await b.close(); })"') \
+        && [[ "$out" =~ headed=([1-9][0-9]*) ]] \
+        && pass "xvfb-run, network off: a browser with a window starts (screen ${BASH_REMATCH[1]} px wide)" \
+        || fail "xvfb-run could not start a browser with a window (got: $out)"
 
     # Puppeteer, installed from the registry into a volume and then run with
     # the network off. The install must not fetch Puppeteer's own browsers,

@@ -124,7 +124,17 @@ RUN gpg --show-keys --with-colons --with-fingerprint /tmp/nodesource.gpg.key \
 # Japanese one. WenQuanYi Micro Hei is a TrueType font with Chinese glyph
 # forms that both can use. Its fontconfig rule is removed, because the rule
 # puts the font ahead of Noto CJK for Japanese and Korean text in every
-# other program; the build fails if fontconfig stops choosing Noto CJK.
+# other program.
+#
+# The fonts from fonts-unifont on are, with Liberation and Noto Color Emoji,
+# the fonts in the list of packages `playwright install-deps` installs. They
+# are here so that it finds every package in its list installed (see the
+# headless browser below). Loma draws Thai, which no other font here has.
+# WenQuanYi Zen Hei and the IPA fonts would take Japanese and Korean text,
+# and text with no language set, from Noto CJK; 62-noto-cjk.conf keeps Noto
+# CJK first for all three languages. The build fails if fontconfig stops
+# choosing Noto CJK for any of them, in any generic family.
+COPY 62-noto-cjk.conf /etc/fonts/conf.d/62-noto-cjk.conf
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     python3-matplotlib \
@@ -146,11 +156,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-wqy-microhei \
+    fonts-unifont \
+    fonts-freefont-ttf \
+    fonts-ipafont-gothic \
+    fonts-tlwg-loma-otf \
+    fonts-wqy-zenhei \
+    xfonts-cyrillic \
+    xfonts-scalable \
     && rm /etc/fonts/conf.d/65-wqy-microhei.conf \
     && fc-cache -f \
     && for face in zh-cn:SC zh-tw:TC ja:JP ko:KR; do \
-        fc-match "sans-serif:lang=${face%:*}" | grep -q "Noto Sans CJK ${face#*:}" \
-            || { echo "fontconfig does not choose Noto Sans CJK ${face#*:} for ${face%:*}" >&2; exit 1; }; \
+        for generic in sans-serif:Sans serif:Serif "monospace:Sans Mono"; do \
+            want="Noto ${generic#*:} CJK ${face#*:}"; \
+            [ "$(fc-match -f '%{family[0]}' "${generic%%:*}:lang=${face%:*}")" = "${want}" ] \
+                || { echo "fontconfig does not choose ${want} for ${face%:*} ${generic%%:*} text" >&2; exit 1; }; \
+        done; \
+    done \
+    && for generic in sans-serif serif monospace; do \
+        fc-match -f '%{family[0]}' "${generic}:charset=4e2d" | grep -q '^Noto Sans CJK' \
+            || { echo "fontconfig does not choose Noto Sans CJK for ${generic} text with no language set" >&2; exit 1; }; \
     done \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -219,27 +243,42 @@ RUN userdel -r ubuntu 2>/dev/null || true && \
 # of a CPU core, and a restricted network may not allow its host. So the
 # image carries Chromium and what it needs to start.
 #
-# These are the shared libraries the browser binaries link against that the
-# image did not have yet. They are named one by one instead of installed by
-# `playwright install --with-deps`, which adds an X server and fonts that
-# would change which font draws Chinese, Japanese, and Korean text. libgbm1
-# brings Mesa and LLVM with it, about 180 MB that a headless browser never
-# loads; Ubuntu packages them as its dependencies. fonts-noto-color-emoji is
-# here because without it the browser draws most emoji as nothing at all.
+# These are the packages `playwright install-deps chromium` installs on
+# Ubuntu 24.04: the shared libraries Chromium links against, and Xvfb, the
+# display that a browser started with a window needs (`xvfb-run`). The fonts
+# in the same list are installed with the others above. A sandbox cannot
+# install them itself: it runs without root, and where it sets the
+# no-new-privileges flag, sudo cannot run at all. With every one present,
+# the Chromium that a project's own Playwright downloads, at another
+# version, starts as this one does.
+#
+# libgbm1 brings Mesa and LLVM with it, about 180 MB that a headless browser
+# never loads; Ubuntu packages them as its dependencies.
+# fonts-noto-color-emoji is here because without it the browser draws most
+# emoji as nothing at all.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2t64 \
     libatk-bridge2.0-0t64 \
     libatk1.0-0t64 \
     libatspi2.0-0t64 \
+    libcairo2 \
     libcups2t64 \
     libdbus-1-3 \
+    libdrm2 \
     libgbm1 \
+    libglib2.0-0t64 \
+    libnspr4 \
+    libnss3 \
     libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
     libxcomposite1 \
     libxdamage1 \
+    libxext6 \
     libxfixes3 \
     libxkbcommon0 \
     libxrandr2 \
+    xvfb \
     fonts-noto-color-emoji \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
