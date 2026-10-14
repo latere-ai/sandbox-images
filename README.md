@@ -89,8 +89,8 @@ everything in the base is in both.
   - Python's Playwright keeps its browser in its own package in the same
     way. After `pip install playwright`, install the browser with
     `python -m playwright install chromium`, which needs the network.
-    Outside a virtual environment, `playwright` on `PATH` is the installed
-    Node.js command line, which installs nothing for Python.
+    Outside an activated virtual environment, `playwright` on `PATH` is the
+    installed Node.js command line, which installs nothing for Python.
   - `xvfb-run` gives a browser with a window a virtual display, for example
     `xvfb-run npx playwright test --headed`. As a container's own command it
     needs an init process, as `docker run --init` gives it: as process 1 it

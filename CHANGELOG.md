@@ -31,9 +31,9 @@ work in them, one section per release.
   `npx playwright`, and `npm link playwright` still start the installed
   browser with nothing to download.
 - Python's Playwright at the image's version also downloads its browser,
-  with `python -m playwright install chromium`. Outside a virtual
-  environment, `playwright` on `PATH` is the image's Node.js command line,
-  which installs nothing for Python.
+  with `python -m playwright install chromium`. Outside an activated
+  virtual environment, `playwright` on `PATH` is the image's Node.js command
+  line, which installs nothing for Python.
 
 ## v0.0.21 - 2026-10-13
 
