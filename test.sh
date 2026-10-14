@@ -423,10 +423,11 @@ JS") || true
     # a few hundred MB, and `--with-deps` and the browser have to work with
     # what the image has. Then a new sandbox on the same volume, with the
     # network off, starts the browser of the project in /workspace again: a
-    # sandbox that restarts keeps it.
+    # sandbox that restarts keeps it. Playwright prints why an install failed
+    # among its progress lines, so the end of them is kept for the failure.
     other_script="const { chromium } = require(process.cwd() + '/node_modules/playwright'); chromium.launch().then(async b => { const p = await b.newPage(); await p.setContent('<title>other</title>'); console.log('other=' + await p.title() + ' ' + b.version()); await b.close(); })"
     for dir in /tmp/other /workspace/other; do
-        out=$(run_sandbox "$BASE" "mkdir -p $dir && cd $dir && npm init -y >/dev/null && npm install --silent --no-audit --no-fund -D playwright@${PLAYWRIGHT_OTHER} && npx playwright install --with-deps chromium >/dev/null && node -e \"$other_script\"") \
+        out=$(run_sandbox "$BASE" "mkdir -p $dir && cd $dir && npm init -y >/dev/null && npm install --silent --no-audit --no-fund -D playwright@${PLAYWRIGHT_OTHER} && { npx playwright install --with-deps chromium >install.log 2>&1 || { tail -n 5 install.log; false; }; } && node -e \"$other_script\"") \
             && [[ "$out" == *"other=other "* ]] \
             && pass "playwright@${PLAYWRIGHT_OTHER} in a project in ${dir%/*}, hosted sandbox: install --with-deps and its own Chromium start (${out##*other=other })" \
             || fail "playwright@${PLAYWRIGHT_OTHER} in a project in ${dir%/*}, hosted sandbox: could not install or start its Chromium (got: $out)"
@@ -448,7 +449,7 @@ with sync_playwright() as p:
     print("python=" + page.title() + " " + browser.version)
     browser.close()
 PY
-    out=$(run_sandbox "$BASE" "python -m venv /tmp/venv && /tmp/venv/bin/pip install --quiet playwright && /tmp/venv/bin/playwright install chromium >/dev/null && /tmp/venv/bin/python - <<'PY'
+    out=$(run_sandbox "$BASE" "python -m venv /tmp/venv && /tmp/venv/bin/pip install --quiet playwright && { /tmp/venv/bin/playwright install chromium >/tmp/install.log 2>&1 || { tail -n 5 /tmp/install.log; false; }; } && /tmp/venv/bin/python - <<'PY'
 $python_script
 PY") && [[ "$out" == *"python=python "* ]] \
         && pass "Python Playwright in a virtual environment, hosted sandbox: playwright install chromium, then its browser starts (${out##*python=python })" \
