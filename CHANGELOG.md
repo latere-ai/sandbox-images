@@ -5,6 +5,8 @@ work in them, one section per release.
 
 ## Unreleased
 
+## v0.0.22 - 2026-10-14
+
 ### Fixed
 
 - In `sandbox-base`, a project's own Playwright, at any version, downloads
