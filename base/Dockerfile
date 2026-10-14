@@ -308,12 +308,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #
 # It all lives under /opt/playwright, outside the home directory, so a volume
 # mounted over the home does not hide the browser and a read-only home does
-# not stop it. The tree belongs to the sandbox user for two reasons:
-# Playwright takes a lock in the browser directory even when it has nothing
-# to install, and npm sets the mode of a package's command when it links the
-# package into a project. The owner is set in the step that writes the
-# files, because a later layer that changed it would hold a second copy of
-# every file.
+# not stop it. The tree belongs to the sandbox user because Playwright takes
+# a lock in the browser directory even when it has nothing to install. The
+# owner is set in the step that writes the files, because a later layer that
+# changed it would hold a second copy of every file.
+#
+# The installed package's package.json names no command. When npm links a
+# package into a project, it sets the mode of each command the package
+# names, and where /opt is read-only that fails, and `npm link playwright`
+# with it. The command npm made from that entry at install,
+# /opt/playwright/bin/playwright, stays, and the playwright script below
+# runs it.
 #
 # /opt/playwright/chrome names the Chromium binary, whose directory differs
 # by revision and by architecture. The build fails if the installed copy's
@@ -325,6 +330,9 @@ ARG PLAYWRIGHT_VERSION=1.64.0
 ENV PLAYWRIGHT_BROWSERS_PATH=0
 RUN NPM_CONFIG_PREFIX=/opt/playwright npm install -g playwright@${PLAYWRIGHT_VERSION} && \
     npm cache clean --force && \
+    jq 'del(.bin)' /opt/playwright/lib/node_modules/playwright/package.json > /tmp/package.json && \
+    mv /tmp/package.json /opt/playwright/lib/node_modules/playwright/package.json && \
+    test -x /opt/playwright/bin/playwright && \
     core="$(node -p "require('path').dirname(require.resolve('playwright-core/package.json', { paths: ['/opt/playwright/lib/node_modules/playwright'] }))")" && \
     mkdir /opt/playwright/browsers && \
     ln -s /opt/playwright/browsers "${core}/.local-browsers" && \
@@ -366,14 +374,14 @@ ENV PATH=$PATH:/home/${USERNAME}/.npm-global/bin
 ENV NODE_PATH=/opt/playwright/lib/node_modules
 
 # npx looks for a command in the project and then in npm's global directory,
-# which for this user is in the home directory, and never on PATH. `npm link`
-# records the package there, so `npx playwright` finds it, and
-# `npm link playwright` in a project, which is how an ES module imports it,
-# has something to link. Without the record npx asks the registry, and with
-# the network off it gives up only after about seventy seconds. The command
-# npx then runs is pointed at the playwright script, so it behaves as
-# `playwright` does.
+# which for this user is in the home directory, and never on PATH. Without
+# one there it asks the registry, and with the network off it gives up only
+# after about seventy seconds. The command there is a link to the playwright
+# script, so `npx playwright` behaves as `playwright` does. `npm link`
+# records the package in the same directory, so `npm link playwright` in a
+# project, which is how an ES module imports it, has something to link.
 RUN cd /opt/playwright/lib/node_modules/playwright && npm link && \
+    mkdir -p ~/.npm-global/bin && \
     ln -sf /usr/local/bin/playwright ~/.npm-global/bin/playwright && \
     rm -rf ~/.npm /tmp/node-compile-cache
 
