@@ -71,14 +71,26 @@ everything in the base is in both.
   - Puppeteer starts it too. The `puppeteer` package finds it and downloads
     no browser of its own; `puppeteer-core` takes
     `executablePath: process.env.PUPPETEER_EXECUTABLE_PATH`.
-  - A project that installs another Playwright version downloads that
-    version's browser with `npx playwright install chromium`, which needs
-    the network, and the browser starts: the image has every system package
-    that Playwright's `install-deps chromium` names for Ubuntu 24.04.
-    `playwright --version` names the version that needs no download.
+  - A project that installs Playwright from the registry has a copy of its
+    own, at whatever version it names, and that copy keeps its browser in
+    the project's `node_modules`: the image sets
+    `PLAYWRIGHT_BROWSERS_PATH=0`. `npx playwright install chromium` in the
+    project downloads the browser, which needs the network, and the browser
+    starts: the image has every system package that Playwright's
+    `install-deps chromium` names for Ubuntu 24.04. This works under a
+    read-only root file system as well, in `/tmp` or in `/workspace`, and a
+    browser a project in `/workspace` downloaded is still there after a
+    restart. A project on the image's own version downloads its browser
+    too; `npm link playwright` instead gives it the installed copy and its
+    browser.
   - `npx playwright install --with-deps chromium` and
     `npx playwright install-deps` find those packages installed and succeed,
     also where sudo cannot run (see **User** below).
+  - Python's Playwright keeps its browser in its own package in the same
+    way. After `pip install playwright`, install the browser with
+    `python -m playwright install chromium`, which needs the network.
+    Outside a virtual environment, `playwright` on `PATH` is the installed
+    Node.js command line, which installs nothing for Python.
   - `xvfb-run` gives a browser with a window a virtual display, for example
     `xvfb-run npx playwright test --headed`. As a container's own command it
     needs an init process, as `docker run --init` gives it: as process 1 it
