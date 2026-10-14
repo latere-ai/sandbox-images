@@ -5,6 +5,36 @@ work in them, one section per release.
 
 ## Unreleased
 
+### Fixed
+
+- In `sandbox-base`, a project's own Playwright, at any version, downloads
+  its browser with `npx playwright install [--with-deps] chromium` and
+  starts it in a sandbox whose root file system is read-only. There the
+  install failed after about eight minutes with
+  `EROFS: read-only file system, mkdir '/opt/playwright/browsers/__dirlock'`,
+  and the browser then could not start, because every Playwright used the
+  image's browser directory, which such a sandbox cannot write. The image
+  now sets `PLAYWRIGHT_BROWSERS_PATH=0`, so each Playwright keeps its
+  browsers in its own package: a project's in its `node_modules`, where a
+  browser downloaded in `/workspace` is still there after a restart, and the
+  image's own under `/opt/playwright` as before. Python's Playwright, in a
+  virtual environment or not, installs and starts its browser there too.
+- `npm link playwright` works in a sandbox whose root file system is
+  read-only, so an ES module there imports the installed Playwright. It
+  failed with `EROFS: read-only file system, chmod`.
+
+### Changed
+
+- A project that installs the image's own Playwright version from the
+  registry downloads its browser as well, as a project on any other version
+  does; it used to find the image's. `require('playwright')`,
+  `npx playwright`, and `npm link playwright` still start the installed
+  browser with nothing to download.
+- Python's Playwright at the image's version also downloads its browser,
+  with `python -m playwright install chromium`. Outside a virtual
+  environment, `playwright` on `PATH` is the image's Node.js command line,
+  which installs nothing for Python.
+
 ## v0.0.21 - 2026-10-13
 
 ### Fixed
