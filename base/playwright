@@ -3,24 +3,32 @@
 # playwright [command...]: the command line of the Playwright installed in
 # this image.
 #
-# `playwright install` takes a lock in the browser directory, and records
-# there who asked, before it looks at what is installed. Where that directory
-# cannot be written, as under a read-only root file system, it retries the
-# lock for about eight minutes and then fails, though the browser it was asked
-# for is there. So when the image's browser directory is read-only, the
-# command works from a directory under TMPDIR that links to the installed
-# browsers: the lock and the record go there, and the browsers are found with
-# nothing to download. A browser directory someone else chose is left alone.
+# With PLAYWRIGHT_BROWSERS_PATH=0, as the image sets it, the installed
+# Playwright keeps its browsers in its own package, which links to
+# /opt/playwright/browsers. `playwright install` takes a lock in that
+# directory, and records there who asked, before it looks at what is
+# installed. Where the directory cannot be written, as under a read-only
+# root file system, it retries the lock for about eight minutes and then
+# fails, though the browser it was asked for is there. So when the image's
+# browser directory is read-only, the command works from a directory under
+# TMPDIR that links to the installed browsers: the lock and the record go
+# there, and the browsers are found with nothing to download. The same holds
+# when PLAYWRIGHT_BROWSERS_PATH names the image's browser directory itself.
+# A browser directory someone else chose is left alone.
 set -eu
 
 installed="${PLAYWRIGHT_INSTALLED_BROWSERS:-/opt/playwright/browsers}"
-if [ "${PLAYWRIGHT_BROWSERS_PATH:-}" = "${installed}" ] && [ ! -w "${installed}" ]; then
-    PLAYWRIGHT_BROWSERS_PATH="${TMPDIR:-/tmp}/playwright-browsers"
-    export PLAYWRIGHT_BROWSERS_PATH
-    mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"
-    for browser in "${installed}"/*; do
-        ln -sfn "${browser}" "${PLAYWRIGHT_BROWSERS_PATH}/${browser##*/}"
-    done
-fi
+case "${PLAYWRIGHT_BROWSERS_PATH:-}" in
+    0 | "${installed}")
+        if [ ! -w "${installed}" ]; then
+            PLAYWRIGHT_BROWSERS_PATH="${TMPDIR:-/tmp}/playwright-browsers"
+            export PLAYWRIGHT_BROWSERS_PATH
+            mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"
+            for browser in "${installed}"/*; do
+                ln -sfn "${browser}" "${PLAYWRIGHT_BROWSERS_PATH}/${browser##*/}"
+            done
+        fi
+        ;;
+esac
 
 exec "${PLAYWRIGHT_CLI:-/opt/playwright/bin/playwright}" "$@"

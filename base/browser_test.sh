@@ -65,65 +65,83 @@ make_installed() {
     echo "$dir"
 }
 
-# A browser directory that can be written is used as it is.
+# A browser directory that can be written is used as it is, whether
+# PLAYWRIGHT_BROWSERS_PATH is 0, as the image sets it, or names the
+# directory.
 test_playwright_writable() {
-    local name="playwright: a writable browser directory is used as it is"
-    local tmp installed out
-    tmp="$(mktemp -d)"
-    installed="$(make_installed "$tmp")"
-    out="$(PLAYWRIGHT_INSTALLED_BROWSERS="$installed" PLAYWRIGHT_BROWSERS_PATH="$installed" TMPDIR="${tmp}/run" \
-        PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright install chromium)"
-    if grep -qx "BROWSERS=${installed}" <<<"$out" && [[ ! -e "${tmp}/run" ]] \
-        && [[ "$(sed -n '3,4p' <<<"$out" | tr '\n' ' ')" == "install chromium " ]]; then
-        pass "$name"
-    else
-        fail "$name (got: $(tr '\n' ' ' <<<"$out"))"
-    fi
-    rm -rf "$tmp"
+    local value tmp installed out
+    for value in 0 installed; do
+        local name="playwright: a writable browser directory is used as it is (PLAYWRIGHT_BROWSERS_PATH=${value})"
+        tmp="$(mktemp -d)"
+        installed="$(make_installed "$tmp")"
+        [[ "$value" == installed ]] && value="$installed"
+        out="$(PLAYWRIGHT_INSTALLED_BROWSERS="$installed" PLAYWRIGHT_BROWSERS_PATH="$value" TMPDIR="${tmp}/run" \
+            PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright install chromium)"
+        if grep -qx "BROWSERS=${value}" <<<"$out" && [[ ! -e "${tmp}/run" ]] \
+            && [[ "$(sed -n '3,4p' <<<"$out" | tr '\n' ' ')" == "install chromium " ]]; then
+            pass "$name"
+        else
+            fail "$name (got: $(tr '\n' ' ' <<<"$out"))"
+        fi
+        rm -rf "$tmp"
+    done
 }
 
 # A read-only one would make `playwright install` retry its lock for minutes
 # and fail. The command works from a writable directory that links to every
 # installed browser, and leaves the record of earlier installs behind.
 test_playwright_read_only() {
-    local name="playwright: a read-only browser directory is used through links under TMPDIR"
-    local tmp installed out linked
-    tmp="$(mktemp -d)"
-    installed="$(make_installed "$tmp")"
-    mkdir -p "${tmp}/run"
-    chmod 0555 "$installed"
-    out="$(PLAYWRIGHT_INSTALLED_BROWSERS="$installed" PLAYWRIGHT_BROWSERS_PATH="$installed" TMPDIR="${tmp}/run" \
-        PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright install chromium)"
-    linked="${tmp}/run/playwright-browsers"
-    if grep -qx "BROWSERS=${linked}" <<<"$out" \
-        && [[ "$(readlink "${linked}/chromium-1")" == "${installed}/chromium-1" ]] \
-        && [[ "$(readlink "${linked}/ffmpeg-1")" == "${installed}/ffmpeg-1" ]] \
-        && [[ ! -e "${linked}/.links" && -w "$linked" ]]; then
-        pass "$name"
-    else
-        fail "$name (got: $(tr '\n' ' ' <<<"$out"); linked: $(ls -A "$linked" 2>&1 | tr '\n' ' '))"
-    fi
-    chmod 0755 "$installed"
-    rm -rf "$tmp"
+    local value tmp installed out linked
+    for value in 0 installed; do
+        local name="playwright: a read-only browser directory is used through links under TMPDIR (PLAYWRIGHT_BROWSERS_PATH=${value})"
+        tmp="$(mktemp -d)"
+        installed="$(make_installed "$tmp")"
+        [[ "$value" == installed ]] && value="$installed"
+        mkdir -p "${tmp}/run"
+        chmod 0555 "$installed"
+        out="$(PLAYWRIGHT_INSTALLED_BROWSERS="$installed" PLAYWRIGHT_BROWSERS_PATH="$value" TMPDIR="${tmp}/run" \
+            PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright install chromium)"
+        linked="${tmp}/run/playwright-browsers"
+        if grep -qx "BROWSERS=${linked}" <<<"$out" \
+            && [[ "$(readlink "${linked}/chromium-1")" == "${installed}/chromium-1" ]] \
+            && [[ "$(readlink "${linked}/ffmpeg-1")" == "${installed}/ffmpeg-1" ]] \
+            && [[ ! -e "${linked}/.links" && -w "$linked" ]]; then
+            pass "$name"
+        else
+            fail "$name (got: $(tr '\n' ' ' <<<"$out"); linked: $(ls -A "$linked" 2>&1 | tr '\n' ' '))"
+        fi
+        chmod 0755 "$installed"
+        rm -rf "$tmp"
+    done
 }
 
-# Someone who points Playwright at a browser directory of their own gets that
-# directory, whatever the state of the image's.
+# Someone who points Playwright at a browser directory of their own, or
+# unsets the variable for Playwright's default, gets what they chose,
+# whatever the state of the image's.
 test_playwright_other_directory() {
-    local name="playwright: another browser directory is left alone"
-    local tmp installed out
-    tmp="$(mktemp -d)"
-    installed="$(make_installed "$tmp")"
-    chmod 0555 "$installed"
-    out="$(PLAYWRIGHT_INSTALLED_BROWSERS="$installed" PLAYWRIGHT_BROWSERS_PATH="${tmp}/mine" TMPDIR="${tmp}/run" \
-        PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright --version)"
-    if grep -qx "BROWSERS=${tmp}/mine" <<<"$out" && [[ ! -e "${tmp}/run" ]]; then
-        pass "$name"
-    else
-        fail "$name (got: $(tr '\n' ' ' <<<"$out"))"
-    fi
-    chmod 0755 "$installed"
-    rm -rf "$tmp"
+    local value tmp installed out
+    for value in mine unset; do
+        local name="playwright: another browser directory is left alone (PLAYWRIGHT_BROWSERS_PATH ${value})"
+        tmp="$(mktemp -d)"
+        installed="$(make_installed "$tmp")"
+        chmod 0555 "$installed"
+        if [[ "$value" == mine ]]; then
+            out="$(PLAYWRIGHT_INSTALLED_BROWSERS="$installed" PLAYWRIGHT_BROWSERS_PATH="${tmp}/mine" TMPDIR="${tmp}/run" \
+                PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright --version)"
+            want="BROWSERS=${tmp}/mine"
+        else
+            out="$(env -u PLAYWRIGHT_BROWSERS_PATH PLAYWRIGHT_INSTALLED_BROWSERS="$installed" TMPDIR="${tmp}/run" \
+                PLAYWRIGHT_CLI="$(make_stub "$tmp")" sh ./playwright --version)"
+            want="BROWSERS="
+        fi
+        if grep -qx "$want" <<<"$out" && [[ ! -e "${tmp}/run" ]]; then
+            pass "$name"
+        else
+            fail "$name (got: $(tr '\n' ' ' <<<"$out"))"
+        fi
+        chmod 0755 "$installed"
+        rm -rf "$tmp"
+    done
 }
 
 echo "base browser commands:"

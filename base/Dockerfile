@@ -249,8 +249,8 @@ RUN userdel -r ubuntu 2>/dev/null || true && \
 # in the same list are installed with the others above. A sandbox cannot
 # install them itself: it runs without root, and where it sets the
 # no-new-privileges flag, sudo cannot run at all. With every one present,
-# the Chromium that a project's own Playwright downloads, at another
-# version, starts as this one does, and `playwright install --with-deps`
+# the Chromium that a project's own Playwright downloads, at any version,
+# starts as this one does, and `playwright install --with-deps`
 # finds nothing to install (see the sudo script below). The build checks
 # them against Playwright's own list.
 #
@@ -292,29 +292,51 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # default, and the ffmpeg that records video. With them present, the same
 # command run later in a sandbox finds nothing to download.
 #
+# PLAYWRIGHT_BROWSERS_PATH=0 has each copy of Playwright keep its browsers
+# in its own package, in playwright-core/.local-browsers. In the installed
+# copy that is a link to /opt/playwright/browsers. A project's own
+# Playwright, at any version, downloads its browser into the project's
+# node_modules, which a sandbox with a read-only root file system can write,
+# in /tmp or in /workspace; in /workspace the browser is still there after
+# the sandbox restarts. One browser directory named for every Playwright
+# would not do: such a sandbox cannot write a directory in the image, so a
+# project's install could neither lock it nor add its browser to it. Each copy
+# also keeps its own record of which packages use its browsers, so an
+# install by one never removes the browsers of another. A project that
+# installs the image's own version from the registry downloads its browser
+# too; `npm link playwright` gives a project the installed copy instead.
+#
 # It all lives under /opt/playwright, outside the home directory, so a volume
 # mounted over the home does not hide the browser and a read-only home does
-# not stop it. The tree belongs to the sandbox user for three reasons:
+# not stop it. The tree belongs to the sandbox user for two reasons:
 # Playwright takes a lock in the browser directory even when it has nothing
-# to install, npm sets the mode of a package's command when it links the
-# package into a project, and a project on another Playwright version can
-# add its own browser revision beside this one when the network allows. The
-# owner is set in the step that writes the files, because a later layer that
-# changed it would hold a second copy of every file.
+# to install, and npm sets the mode of a package's command when it links the
+# package into a project. The owner is set in the step that writes the
+# files, because a later layer that changed it would hold a second copy of
+# every file.
 #
 # /opt/playwright/chrome names the Chromium binary, whose directory differs
-# by revision and by architecture. The build fails if a binary lacks a
-# shared library, so a browser build that needs one more is caught here and
-# not in a sandbox.
+# by revision and by architecture. The build fails if the installed copy's
+# browser is not under /opt/playwright/browsers, as when a Playwright
+# release stops reading 0 this way, and if a binary lacks a shared library,
+# so a browser build that needs one more is caught here and not in a
+# sandbox.
 ARG PLAYWRIGHT_VERSION=1.64.0
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright/browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=0
 RUN NPM_CONFIG_PREFIX=/opt/playwright npm install -g playwright@${PLAYWRIGHT_VERSION} && \
     npm cache clean --force && \
+    core="$(node -p "require('path').dirname(require.resolve('playwright-core/package.json', { paths: ['/opt/playwright/lib/node_modules/playwright'] }))")" && \
+    mkdir /opt/playwright/browsers && \
+    ln -s /opt/playwright/browsers "${core}/.local-browsers" && \
     /opt/playwright/bin/playwright install chromium && \
-    chrome="$(node -e "console.log(require('/opt/playwright/lib/node_modules/playwright').chromium.executablePath())")" && \
+    chrome="$(readlink -f "$(node -e "console.log(require('/opt/playwright/lib/node_modules/playwright').chromium.executablePath())")")" && \
+    case "${chrome}" in \
+        /opt/playwright/browsers/*) ;; \
+        *) echo "the installed Playwright looks for its browser at ${chrome}, not under /opt/playwright/browsers" >&2; exit 1 ;; \
+    esac && \
     test -x "${chrome}" && \
     ln -s "${chrome}" /opt/playwright/chrome && \
-    if find "${PLAYWRIGHT_BROWSERS_PATH}" -type f -perm -u+x -exec ldd {} + 2>/dev/null | grep 'not found'; then \
+    if find /opt/playwright/browsers -type f -perm -u+x -exec ldd {} + 2>/dev/null | grep 'not found'; then \
         echo 'a browser binary lacks a shared library' >&2; exit 1; \
     fi && \
     chown -R ${USERNAME}:${USERNAME} /opt/playwright && \
