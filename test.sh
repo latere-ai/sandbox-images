@@ -57,6 +57,41 @@ run_in_root() {
     $RUNTIME run --rm $PULL_POLICY --user root --entrypoint bash "$image" -c "$*" 2>&1
 }
 
+# A hosted sandbox runs an image with a read-only root file system. What it
+# can write is /tmp and /dev/shm, both empty at every start, and a volume at
+# /workspace. sudo cannot become root there (no-new-privileges), the
+# container holds no capabilities, and HOME is a directory under /tmp. With
+# --read-only, podman also mounts writable directories over /run and
+# /var/tmp, which a hosted sandbox does not have; --read-only-tmpfs=false
+# stops that, and makes /dev/shm read-only too, so /dev/shm is mounted again.
+SANDBOX_FLAGS="--read-only --tmpfs /tmp:rw,exec --security-opt no-new-privileges --cap-drop all -e HOME=/tmp/home"
+if [[ "$RUNTIME" == podman ]]; then
+    SANDBOX_FLAGS="$SANDBOX_FLAGS --read-only-tmpfs=false --tmpfs /dev/shm:rw,nosuid,nodev"
+fi
+
+# run_sandbox is run_in under those conditions, with the volume named by
+# WORKSPACE at /workspace. HOME is created first, as the hosted sandbox
+# creates it before it runs a command.
+run_sandbox() {
+    local image="$1"; shift
+    RUN_FLAGS="$SANDBOX_FLAGS -v ${WORKSPACE:?}:/workspace ${RUN_FLAGS:-}" run_in "$image" "mkdir -p \"\$HOME\" && $*"
+}
+
+# run_where runs a command with the network off, under the conditions its
+# first argument names: a writable root; a writable root where sudo cannot
+# run; a read-only root with a writable /tmp and the image's HOME; or a
+# hosted sandbox.
+run_where() {
+    local where="$1"; shift
+    case "$where" in
+        "writable root") run_offline "$@" ;;
+        "no new privileges") RUN_FLAGS="--security-opt no-new-privileges ${RUN_FLAGS:-}" run_offline "$@" ;;
+        "read-only root") RUN_FLAGS="--read-only --tmpfs /tmp:rw,exec ${RUN_FLAGS:-}" run_offline "$@" ;;
+        "hosted sandbox") RUN_FLAGS="--network none ${RUN_FLAGS:-}" run_sandbox "$@" ;;
+        *) echo "run_where: unknown conditions '$where'" >&2; return 2 ;;
+    esac
+}
+
 # --- Catalog coverage: every image being checked must exist and run ---
 # Pre-pull with an explicit platform: podman refuses to auto-pull a
 # non-native image (e.g. the amd64-only gui image on an arm64 host), so
@@ -80,6 +115,11 @@ done
 if selected sandbox-base; then
     section "sandbox-base:${TAG}"
     BASE="${REGISTRY}/sandbox-base:${TAG}"
+    # The volume run_sandbox mounts at /workspace. It holds the browsers the
+    # projects below download, so it is removed however the run ends.
+    WORKSPACE="sandbox-images-test-workspace-$$"
+    $RUNTIME volume create "$WORKSPACE" >/dev/null
+    trap '$RUNTIME volume rm -f "$WORKSPACE" >/dev/null 2>&1 || true' EXIT
 
     out=$(run_in "$BASE" 'go version') && [[ "$out" == *"go1."* ]] \
         && pass "go: $out" || fail "go not found"
@@ -324,64 +364,99 @@ JS") || true
         && pass "chromium --headless --screenshot, network off: writes a PNG" \
         || fail "chromium --headless --screenshot failed (got: $out)"
 
-    # A sandbox with a read-only root file system: the home directory and the
-    # browser directory cannot be written, /tmp can. The install command has
-    # to return at once all the same, and the browser has to start.
-    out=$(RUN_FLAGS="--read-only --tmpfs /tmp:rw,exec" run_offline "$BASE" 'cd /tmp && playwright install chromium && node -e "require(\"playwright\").chromium.launch().then(async b => { console.log(\"launched=\" + b.version()); await b.close(); })" && echo "seconds=$SECONDS"') \
-        && [[ "$out" == *"launched="* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
-        && pass "read-only root file system: playwright install returns at once and the browser starts (${BASH_REMATCH[1]} s)" \
-        || fail "read-only root file system: playwright install or the browser failed (got: $out)"
+    # The installed Playwright where the root file system is read-only, with
+    # the image's HOME and in a hosted sandbox: the browser directory and the
+    # home directory cannot be written there. The install command has to
+    # return at once all the same, and the browser has to start.
+    for where in "read-only root" "hosted sandbox"; do
+        out=$(run_where "$where" "$BASE" 'cd /tmp && playwright install chromium && node -e "require(\"playwright\").chromium.launch().then(async b => { console.log(\"launched=\" + b.version()); await b.close(); })" && echo "seconds=$SECONDS"') \
+            && [[ "$out" == *"launched="* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
+            && pass "$where, network off: playwright install returns at once and the browser starts (${BASH_REMATCH[1]} s)" \
+            || fail "$where: playwright install or the browser failed (got: $out)"
+    done
 
     # What someone types first, in a directory with no project and with the
     # network off: npx has to find the installed Playwright, and the install
     # command has to find the browser and return. Thirty seconds is far above
     # the second or two this takes, and below the minute and more npx spends
     # before it gives up on a registry it cannot reach.
-    for root in "writable" "read-only"; do
-        flags=""
-        if [[ "$root" == "read-only" ]]; then flags="--read-only --tmpfs /tmp:rw,exec"; fi
-        out=$(RUN_FLAGS="$flags" run_offline "$BASE" 'cd "$(mktemp -d)" && npx playwright --version && npx playwright install chromium && echo "seconds=$SECONDS"') \
+    for where in "writable root" "read-only root" "hosted sandbox"; do
+        out=$(run_where "$where" "$BASE" 'cd "$(mktemp -d)" && npx playwright --version && npx playwright install chromium && echo "seconds=$SECONDS"') \
             && [[ "$out" == *"Version $PLAYWRIGHT_PIN"* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
-            && pass "npx playwright install chromium, network off, $root root: nothing to download (${BASH_REMATCH[1]} s)" \
-            || fail "npx playwright did not use the installed Playwright ($root root, got: $out)"
+            && pass "npx playwright install chromium, network off, $where: nothing to download (${BASH_REMATCH[1]} s)" \
+            || fail "npx playwright did not use the installed Playwright ($where, got: $out)"
     done
 
     # An ES module does not see NODE_PATH. `npm link playwright` gives the
     # project the installed copy, with the network off.
-    out=$(run_offline "$BASE" 'cd "$(mktemp -d)" && npm link playwright >/dev/null && printf "import { chromium } from \"playwright\";\nconst browser = await chromium.launch();\nconsole.log(\"esm=\" + browser.version());\nawait browser.close();\n" > check.mjs && node check.mjs') \
-        && [[ "$out" == *"esm="[0-9]* ]] \
-        && pass "ES module, network off: npm link playwright, then import" \
-        || fail "ES module could not import the installed Playwright (got: $out)"
+    for where in "writable root" "hosted sandbox"; do
+        out=$(run_where "$where" "$BASE" 'cd "$(mktemp -d)" && npm link playwright >/dev/null && printf "import { chromium } from \"playwright\";\nconst browser = await chromium.launch();\nconsole.log(\"esm=\" + browser.version());\nawait browser.close();\n" > check.mjs && node check.mjs') \
+            && [[ "$out" == *"esm="[0-9]* ]] \
+            && pass "ES module, network off, $where: npm link playwright, then import" \
+            || fail "ES module could not import the installed Playwright ($where, got: $out)"
+    done
 
     # A browser with a window, on the virtual display Xvfb gives it. As
     # process 1, xvfb-run waits forever for Xvfb to say it is ready, so the
     # command after it keeps bash as process 1 and xvfb-run its child, as a
     # command in a sandbox is.
-    out=$(run_offline "$BASE" 'xvfb-run -a node -e "require(\"playwright\").chromium.launch({ headless: false }).then(async b => { const p = await b.newPage(); console.log(\"headed=\" + await p.evaluate(() => screen.width)); await b.close(); })" && echo exited') \
-        && [[ "$out" =~ headed=([1-9][0-9]*) ]] \
-        && pass "xvfb-run, network off: a browser with a window starts (screen ${BASH_REMATCH[1]} px wide)" \
-        || fail "xvfb-run could not start a browser with a window (got: $out)"
+    for where in "writable root" "hosted sandbox"; do
+        out=$(run_where "$where" "$BASE" 'xvfb-run -a node -e "require(\"playwright\").chromium.launch({ headless: false }).then(async b => { const p = await b.newPage(); console.log(\"headed=\" + await p.evaluate(() => screen.width)); await b.close(); })" && echo exited') \
+            && [[ "$out" =~ headed=([1-9][0-9]*) ]] \
+            && pass "xvfb-run, network off, $where: a browser with a window starts (screen ${BASH_REMATCH[1]} px wide)" \
+            || fail "xvfb-run could not start a browser with a window ($where, got: $out)"
+    done
 
-    # A sandbox where sudo cannot run, as with the no-new-privileges flag.
-    # Playwright's install of its browser's system packages asks sudo for
-    # them all the same; the image has every one, so the command has nothing
-    # to install and succeeds, with the network off.
-    out=$(RUN_FLAGS="--security-opt no-new-privileges" run_offline "$BASE" 'cd "$(mktemp -d)" && npx playwright install --with-deps chromium && npx playwright install-deps chromium && echo "with-deps=ok seconds=$SECONDS"') \
-        && [[ "$out" == *"with-deps=ok"* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
-        && pass "no new privileges, network off: playwright install --with-deps chromium and install-deps succeed (${BASH_REMATCH[1]} s)" \
-        || fail "no new privileges: playwright install --with-deps chromium failed (got: $out)"
+    # Where sudo cannot run, as with the no-new-privileges flag alone and in
+    # a hosted sandbox. Playwright's install of its browser's system packages
+    # asks sudo for them all the same; the image has every one, so the
+    # command has nothing to install and succeeds, with the network off.
+    for where in "no new privileges" "hosted sandbox"; do
+        out=$(run_where "$where" "$BASE" 'cd "$(mktemp -d)" && npx playwright install --with-deps chromium && npx playwright install-deps chromium && echo "with-deps=ok seconds=$SECONDS"') \
+            && [[ "$out" == *"with-deps=ok"* && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 30 )) \
+            && pass "$where, network off: playwright install --with-deps chromium and install-deps succeed (${BASH_REMATCH[1]} s)" \
+            || fail "$where: playwright install --with-deps chromium failed (got: $out)"
+    done
 
-    # A project on another Playwright version, in a sandbox where sudo
-    # cannot run and HOME is not the image's home directory. Its Playwright
-    # downloads its own Chromium, a few hundred MB, and `--with-deps` and the
-    # browser have to work with what the image has.
-    out=$(RUN_FLAGS="--security-opt no-new-privileges -e HOME=/tmp/home" run_in "$BASE" "mkdir -p \$HOME && cd \$(mktemp -d) && npm init -y >/dev/null && npm install --silent --no-audit --no-fund -D playwright@${PLAYWRIGHT_OTHER} && npx playwright install --with-deps chromium >/dev/null && node -e 'const { chromium } = require(process.cwd() + \"/node_modules/playwright\"); chromium.launch().then(async b => { const p = await b.newPage(); await p.setContent(\"<title>other</title>\"); console.log(\"other=\" + await p.title() + \" \" + b.version()); await b.close(); })'") \
+    # A project on another Playwright version in a hosted sandbox, once in
+    # /tmp and once in /workspace. Its Playwright downloads its own Chromium,
+    # a few hundred MB, and `--with-deps` and the browser have to work with
+    # what the image has. Then a new sandbox on the same volume, with the
+    # network off, starts the browser of the project in /workspace again: a
+    # sandbox that restarts keeps it.
+    other_script="const { chromium } = require(process.cwd() + '/node_modules/playwright'); chromium.launch().then(async b => { const p = await b.newPage(); await p.setContent('<title>other</title>'); console.log('other=' + await p.title() + ' ' + b.version()); await b.close(); })"
+    for dir in /tmp/other /workspace/other; do
+        out=$(run_sandbox "$BASE" "mkdir -p $dir && cd $dir && npm init -y >/dev/null && npm install --silent --no-audit --no-fund -D playwright@${PLAYWRIGHT_OTHER} && npx playwright install --with-deps chromium >/dev/null && node -e \"$other_script\"") \
+            && [[ "$out" == *"other=other "* ]] \
+            && pass "playwright@${PLAYWRIGHT_OTHER} in a project in ${dir%/*}, hosted sandbox: install --with-deps and its own Chromium start (${out##*other=other })" \
+            || fail "playwright@${PLAYWRIGHT_OTHER} in a project in ${dir%/*}, hosted sandbox: could not install or start its Chromium (got: $out)"
+    done
+    out=$(run_where "hosted sandbox" "$BASE" "cd /workspace/other && node -e \"$other_script\"") \
         && [[ "$out" == *"other=other "* ]] \
-        && pass "playwright@${PLAYWRIGHT_OTHER} in a project, no new privileges: install --with-deps and its own Chromium start (${out##*other=other })" \
-        || fail "playwright@${PLAYWRIGHT_OTHER} in a project could not install or start its Chromium (got: $out)"
+        && pass "playwright@${PLAYWRIGHT_OTHER} in /workspace, a new hosted sandbox, network off: its Chromium starts with nothing downloaded" \
+        || fail "playwright@${PLAYWRIGHT_OTHER} in /workspace: its Chromium did not survive a new sandbox (got: $out)"
 
-    # Puppeteer, installed from the registry into a volume and then run with
-    # the network off. The install must not fetch Puppeteer's own browsers,
+    # Python's Playwright, from PyPI into a virtual environment, in a hosted
+    # sandbox: its own command line downloads its browser, and the browser
+    # starts. No version is named, as a person installing it names none.
+    read -r -d '' python_script <<'PY' || true
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.set_content("<title>python</title>")
+    print("python=" + page.title() + " " + browser.version)
+    browser.close()
+PY
+    out=$(run_sandbox "$BASE" "python -m venv /tmp/venv && /tmp/venv/bin/pip install --quiet playwright && /tmp/venv/bin/playwright install chromium >/dev/null && /tmp/venv/bin/python - <<'PY'
+$python_script
+PY") && [[ "$out" == *"python=python "* ]] \
+        && pass "Python Playwright in a virtual environment, hosted sandbox: playwright install chromium, then its browser starts (${out##*python=python })" \
+        || fail "Python Playwright in a virtual environment, hosted sandbox: could not install or start its browser (got: $out)"
+
+    # Puppeteer, installed from the registry into /workspace in a hosted
+    # sandbox, then run with the network off on a writable root and in a
+    # hosted sandbox. The install must not fetch Puppeteer's own browsers,
     # and a launch with no arguments must start the installed Chromium. No
     # version is named: a failure here that the image did not cause means the
     # pinned browser has fallen behind the current Puppeteer.
@@ -396,18 +471,20 @@ const puppeteer = require('puppeteer');
   await browser.close();
 })().catch(error => { console.error(error.message); process.exit(1); });
 JS
-    volume="sandbox-images-test-$$"
-    $RUNTIME volume create "$volume" >/dev/null
-    out=$(RUN_FLAGS="-v $volume:/workspace" run_in "$BASE" 'npm install --silent puppeteer && echo "own-browsers=$(ls ~/.cache/puppeteer 2>/dev/null | wc -l)"') \
+    out=$(run_sandbox "$BASE" 'mkdir -p /workspace/puppeteer && cd /workspace/puppeteer && npm install --silent puppeteer && echo "own-browsers=$(ls ~/.cache/puppeteer 2>/dev/null | wc -l)"') \
         && [[ "$out" == *"own-browsers=0"* ]] \
-        && pass "puppeteer: its install downloads no browser" \
+        && pass "puppeteer, hosted sandbox: its install downloads no browser" \
         || fail "puppeteer: its install downloaded a browser or failed (got: $out)"
-    out=$(RUN_FLAGS="-v $volume:/workspace" run_offline "$BASE" "node - <<'JS'
+    for where in "writable root" "hosted sandbox"; do
+        flags=""
+        if [[ "$where" == "writable root" ]]; then flags="-v $WORKSPACE:/workspace"; fi
+        out=$(RUN_FLAGS="$flags" run_where "$where" "$BASE" "cd /workspace/puppeteer && node - <<'JS'
 $puppeteer_script
 JS") && [[ "$out" == *"puppeteer=1 "* ]] \
-        && pass "puppeteer, network off: starts the installed Chromium and clicks (${out#puppeteer=1 })" \
-        || fail "puppeteer could not start the installed Chromium (got: $out)"
-    $RUNTIME volume rm "$volume" >/dev/null 2>&1 || fail "could not remove the volume $volume"
+            && pass "puppeteer, network off, $where: starts the installed Chromium and clicks (${out#puppeteer=1 })" \
+            || fail "puppeteer could not start the installed Chromium ($where, got: $out)"
+    done
+    $RUNTIME volume rm "$WORKSPACE" >/dev/null 2>&1 || fail "could not remove the volume $WORKSPACE"
 fi
 
 # --- GUI image ---
