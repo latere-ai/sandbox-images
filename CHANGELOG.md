@@ -5,6 +5,28 @@ work in them, one section per release.
 
 ## Unreleased
 
+### Added
+
+- `sandbox-science`, a new image for statistical analysis, built on
+  `sandbox-base`, for `linux/amd64` and `linux/arm64`. An analysis in Python
+  or R runs in it with nothing installed first.
+  - Python: SciPy, statsmodels, scikit-learn, pingouin, seaborn, NetworkX,
+    GeoPandas, libpysal, spreg, Shapely, geopy, pyreadstat, and xarray, and
+    uv for a project's own virtual environment.
+  - R from CRAN, with tidyverse, lme4, lmerTest, ordinal, car, emmeans, afex,
+    psych, spdep, and R's recommended packages, all as Posit Package
+    Manager's built packages for Ubuntu 24.04.
+  - `install.packages()` in a session also installs Posit's built package,
+    in seconds and with nothing compiled, into a user library under `HOME`
+    that R creates at start, so it works in a sandbox whose root file system
+    is read-only.
+  - `/usr/share/sandbox-images/packages.json` lists every Python and R
+    package in the image with its version.
+  - It is about 660 MB larger than `sandbox-base`, 3.9 GB in all
+    uncompressed.
+- `catalog.json` carries an image's package list as `packages`, for every
+  image that publishes one; today that is `sandbox-science`.
+
 ## v0.0.22 - 2026-10-14
 
 ### Fixed
