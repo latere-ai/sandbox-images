@@ -574,6 +574,129 @@ if selected sandbox-harness; then
         && pass "CLI state dirs pre-created" || fail "~/.claude or ~/.codex missing"
 fi
 
+# --- Science image ---
+if selected sandbox-science; then
+    section "sandbox-science:${TAG}"
+    SCIENCE="${REGISTRY}/sandbox-science:${TAG}"
+    WORKSPACE="sandbox-images-test-science-$$"
+    $RUNTIME volume create "$WORKSPACE" >/dev/null
+    trap '$RUNTIME volume rm -f "$WORKSPACE" >/dev/null 2>&1 || true' EXIT
+
+    # The pins live only in science/Dockerfile and science/Rprofile.site; the
+    # image has to report them.
+    R_PIN=$(sed -n 's/^ARG R_VERSION=//p' science/Dockerfile)
+    UV_PIN=$(sed -n 's/^ARG UV_VERSION=//p' science/Dockerfile)
+    R_PACKAGES=$(sed -n 's/^ARG R_PACKAGES="\(.*\)"$/\1/p' science/Dockerfile)
+    R_RECOMMENDED=$(sed -n 's/^ARG R_RECOMMENDED="\(.*\)"$/\1/p' science/Dockerfile)
+    SNAPSHOT=$(sed -n 's/^ *snapshot <- "\(.*\)"$/\1/p' science/Rprofile.site)
+    PACKAGES_PATH=$(yq -r '.images[] | select(.name == "sandbox-science") | .packages' catalog.yaml)
+
+    out=$(run_in "$SCIENCE" 'whoami && pwd') && [[ "$out" == $'agent\n/workspace' ]] \
+        && pass "user agent, workdir /workspace" || fail "user or workdir wrong (got: $out)"
+
+    # The Python stack imports with nothing installed, in a hosted sandbox
+    # with the network off: a read-only root, HOME under /tmp, no privileges.
+    modules="scipy statsmodels sklearn pingouin seaborn networkx libpysal spreg shapely geopy pyreadstat"
+    out=$(run_where "hosted sandbox" "$SCIENCE" "python - <<'PY'
+import importlib
+for name in '$modules'.split():
+    try:
+        print(name + '=' + getattr(importlib.import_module(name), '__version__', '?'))
+    except Exception as error:
+        print(name + ' failed: ' + repr(error))
+PY")
+    for module in $modules; do
+        grep -q "^$module=" <<<"$out" \
+            && pass "python library, hosted sandbox, network off: $(grep "^$module=" <<<"$out")" \
+            || fail "python library does not import: $module (got: $(grep "^$module" <<<"$out"))"
+    done
+
+    out=$(run_where "hosted sandbox" "$SCIENCE" 'uv --version && uv venv --quiet /tmp/venv && /tmp/venv/bin/python -c "import sys; print(sys.prefix)"') \
+        && [[ "$out" == *"uv $UV_PIN"* && "$out" == *"/tmp/venv"* ]] \
+        && pass "uv $UV_PIN, hosted sandbox, network off: uv venv uses the image's Python" \
+        || fail "uv venv failed (got: $out)"
+
+    # Installs a session makes land where it can write: pip for the user
+    # under HOME, beside the image's packages, and uv into a project's
+    # virtual environment under /workspace.
+    out=$(run_sandbox "$SCIENCE" 'pip install --quiet tomli-w && python -c "import scipy, tomli_w; print(tomli_w.__file__)"') \
+        && [[ "$out" == *"/tmp/home/.local/lib/"* ]] \
+        && pass "pip install, hosted sandbox: installs under HOME, SciPy still imports" \
+        || fail "pip install in a hosted sandbox failed (got: $out)"
+    out=$(run_sandbox "$SCIENCE" 'mkdir -p /workspace/project && cd /workspace/project && uv venv --quiet && uv pip install --quiet tomli-w && .venv/bin/python -c "import tomli_w; print(tomli_w.__file__)"') \
+        && [[ "$out" == *"/workspace/project/.venv/lib/"* ]] \
+        && pass "uv pip install, hosted sandbox: installs into the project's virtual environment" \
+        || fail "uv pip install in a hosted sandbox failed (got: $out)"
+
+    out=$(run_in "$SCIENCE" 'R --version | head -n 1') && [[ "$out" == "R version $R_PIN "* ]] \
+        && pass "R: $out" || fail "R is not $R_PIN (got: $out)"
+
+    # Every R package the image installs loads, with the network off.
+    out=$(run_where "hosted sandbox" "$SCIENCE" "Rscript -e 'for (p in strsplit(\"$R_RECOMMENDED $R_PACKAGES\", \" \")[[1]]) { suppressPackageStartupMessages(library(p, character.only = TRUE)); cat(\"loaded=\", p, \" \", format(packageVersion(p)), \"\\n\", sep = \"\") }'" 2>&1) || true
+    for p in $R_PACKAGES; do
+        grep -q "^loaded=$p " <<<"$out" \
+            && pass "R package, hosted sandbox, network off: ${p} $(sed -n "s/^loaded=$p //p" <<<"$out")" \
+            || fail "R package does not load: $p (got: $(tail -n 5 <<<"$out"))"
+    done
+    loaded=0
+    for p in $R_RECOMMENDED; do grep -q "^loaded=$p " <<<"$out" && loaded=$((loaded + 1)); done
+    [[ "$loaded" -eq "$(wc -w <<<"$R_RECOMMENDED")" ]] \
+        && pass "R's recommended packages load ($loaded)" \
+        || fail "R's recommended packages: $loaded of $(wc -w <<<"$R_RECOMMENDED") load"
+
+    # A linear mixed model, the fit the analyses most often need: random
+    # intercepts and slopes per subject on lme4's sleepstudy data.
+    out=$(run_where "hosted sandbox" "$SCIENCE" "Rscript -e 'library(lme4); fit <- lmer(Reaction ~ Days + (Days | Subject), sleepstudy); cat(\"fixef=\", round(fixef(fit), 2), \"\\n\")'" 2>&1) \
+        && [[ "$out" == *"fixef= 251.41 10.47"* ]] \
+        && pass "lme4::lmer fits sleepstudy, hosted sandbox, network off: ${out##*fixef= }" \
+        || fail "lme4::lmer fit failed (got: $out)"
+
+    # The site profile: Posit's built packages at the image's snapshot, and a
+    # user library under HOME that exists before anything is installed.
+    out=$(run_where "hosted sandbox" "$SCIENCE" "Rscript -e 'cat(\"repos=\", getOption(\"repos\")[[\"CRAN\"]], \"\\n\", \"lib=\", .libPaths()[1], \" \", dir.exists(.libPaths()[1]), \"\\n\", sep = \"\")'") \
+        && [[ "$out" == *"repos=https://packagemanager.posit.co/cran/__linux__/noble/$SNAPSHOT"* && "$out" =~ lib=/tmp/home/[^[:space:]]+\ TRUE ]] \
+        && pass "R site profile, hosted sandbox: Posit noble $SNAPSHOT, user library under HOME" \
+        || fail "R site profile wrong (got: $out)"
+
+    # Where HOME cannot be written, R leaves the user library out and starts.
+    out=$(run_where "read-only root" "$SCIENCE" "Rscript -e 'cat(\"sum=\", 1 + 1, \"\\n\", sep = \"\")'") \
+        && [[ "$out" == *"sum=2"* ]] \
+        && pass "R, read-only root and read-only HOME: starts" \
+        || fail "R does not start where HOME cannot be written (got: $out)"
+
+    # A CRAN package the image lacks, installed by a session into its user
+    # library: Posit has to serve it built, so nothing compiles. fastmatch
+    # has C code, which a source install would compile. The library is not
+    # created first; the image has to create it.
+    read -r -d '' install_script <<'R' || true
+stopifnot(!requireNamespace("fastmatch", quietly = TRUE))
+install.packages("fastmatch")
+library(fastmatch)
+cat("installed=", find.package("fastmatch"), "\n", sep = "")
+R
+    out=$(run_sandbox "$SCIENCE" "cat > /tmp/install.R <<'R' && Rscript /tmp/install.R 2>&1 && echo \"seconds=\$SECONDS\"
+$install_script
+R")
+    [[ "$out" == *"installing *binary* package"* && "$out" != *"*source*"* && "$out" != *"gcc"* && "$out" =~ installed=/tmp/home/R/ && "$out" =~ seconds=([0-9]+) ]] && (( BASH_REMATCH[1] < 60 )) \
+        && pass "install.packages(\"fastmatch\"), hosted sandbox: a built package into the user library, nothing compiled (${BASH_REMATCH[1]} s)" \
+        || fail "install.packages(\"fastmatch\") in a hosted sandbox did not install a built package (got: $out)"
+
+    # The package list the image publishes: it parses, names every package
+    # above, and has a real version for each.
+    out=$(run_in "$SCIENCE" "cat $PACKAGES_PATH")
+    missing=$(jq -r --arg pip "scipy statsmodels scikit-learn pingouin seaborn networkx libpysal spreg shapely geopy pyreadstat uv" --arg cran "$R_RECOMMENDED $R_PACKAGES" '
+        . as $list
+        | [($pip | split(" ")[] | select($list.pip[.] == null) | "pip " + .),
+           ($cran | split(" ")[] | select($list.cran[.] == null) | "cran " + .),
+           ($list[] | to_entries[] | select(.value == "0.0.0" or .value == "") | "version of " + .key)]
+        | join(", ")' <<<"$out" 2>&1)
+    [[ -z "$missing" ]] \
+        && pass "package list at $PACKAGES_PATH: $(jq -r 'to_entries | map("\(.value | length) \(.key)") | join(", ")' <<<"$out")" \
+        || fail "package list incomplete or unreadable: $missing"
+
+    $RUNTIME volume rm "$WORKSPACE" >/dev/null 2>&1 || fail "could not remove the volume $WORKSPACE"
+fi
+
 # --- Summary ---
 echo
 if [ "$FAILURES" -eq 0 ]; then
