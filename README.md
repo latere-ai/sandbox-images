@@ -15,9 +15,10 @@ on its own under Docker or Podman.
 | `sandbox-base` | `ghcr.io/latere-ai/sandbox-base` | amd64, arm64 | Ubuntu 24.04, Go and Go tooling, Node.js 22, Python 3 with libraries for charts, documents, and data, a headless Chromium with Playwright, and a non-root `agent` user |
 | `sandbox-gui` | `ghcr.io/latere-ai/sandbox-gui` | amd64 | the base plus an X display, the mutter window manager, a VNC server behind noVNC, and Chrome for Testing |
 | `sandbox-harness` | `ghcr.io/latere-ai/sandbox-harness` | amd64, arm64 | the base plus the Claude Code and Codex CLIs |
+| `sandbox-science` | `ghcr.io/latere-ai/sandbox-science` | amd64, arm64 | the base plus statistics in Python (SciPy, statsmodels, scikit-learn, pingouin, spatial regression) and R with tidyverse, lme4, and spdep, all ready to use |
 
-`sandbox-gui` and `sandbox-harness` are built FROM `sandbox-base`, so
-everything in the base is in both.
+`sandbox-gui`, `sandbox-harness`, and `sandbox-science` are built FROM
+`sandbox-base`, so everything in the base is in each.
 
 ## What's inside
 
@@ -138,6 +139,52 @@ everything in the base is in both.
   `/home/agent` does not hide them.
 - `~/.claude` and `~/.codex` already exist, owned by `agent`, so a single
   credential file can be mounted into either one.
+
+**sandbox-science**
+
+For statistical analysis, such as reproducing the results of a published
+paper, with nothing to install first.
+
+- **Python**: SciPy, statsmodels, scikit-learn, pingouin, seaborn, NetworkX,
+  GeoPandas, libpysal, spreg, Shapely, geopy, pyreadstat, and xarray, beside
+  the base's NumPy, pandas, and matplotlib. Most are Ubuntu 24.04's own
+  packages, built against its NumPy 1.26. libpysal, pingouin, spreg, and uv
+  come from PyPI, at the releases pinned in
+  [`science/Dockerfile`](science/Dockerfile), which work with those.
+  `pip install <package>` installs for the user, as in the base. A package
+  that requires NumPy 2 does not fit beside these: pip would put NumPy 2
+  ahead of Ubuntu's, and SciPy and pandas would no longer import. Give such
+  a package a virtual environment of its own, as below.
+- **uv**: `uv venv` creates a virtual environment, `.venv` in the current
+  directory, from the image's Python 3.12, and `uv pip install` installs a
+  project's packages into it. The environment holds only what is installed
+  into it, so a project's own versions of NumPy or pandas do not disturb the
+  image's. In a sandbox, keep it in the project's directory under
+  `/workspace`.
+- **R**: the release pinned by `R_VERSION` in
+  [`science/Dockerfile`](science/Dockerfile), from CRAN's repository for
+  Ubuntu, with tidyverse, lme4, lmerTest, ordinal, car, emmeans, afex, psych,
+  spdep, and R's recommended packages (MASS, Matrix, nlme, mgcv, survival,
+  and the rest). They are Posit Package Manager's builds for Ubuntu 24.04,
+  taken on the snapshot date set in
+  [`science/Rprofile.site`](science/Rprofile.site), with the system
+  libraries they need, GDAL, GEOS, PROJ, and udunits among them.
+- **Installing R packages**: `install.packages("<package>")` fetches Posit's
+  build from the same snapshot, so it installs in seconds, compiles nothing,
+  and fits the packages already there. It installs into the user library,
+  `~/R/<platform>-library/<version>` (`R_LIBS_USER`), which R creates when
+  it starts, so it works wherever the home directory can be written, as in
+  a sandbox whose `HOME` is under `/tmp`. For a package released after the
+  snapshot, point R at the current one first:
+  `options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest"))`.
+  A package Posit has not built compiles from source, which needs whatever
+  compiler and libraries it names; the image has the base's C and C++
+  compilers and no Fortran compiler.
+- **Package list**: `/usr/share/sandbox-images/packages.json` names every
+  Python and R package the image holds, with its version:
+  `{"pip": {"scipy": "1.11.4", ...}, "cran": {"lme4": "...", ...}}`. Python
+  names are normalized as pip compares them; R names keep R's case. Each
+  release also publishes the list in the [image catalog](#image-catalog).
 
 ## Running an image
 
@@ -291,6 +338,15 @@ images.
       "label": "GUI",
       "description": "...",
       "defaults": { "cpu_milli": 500, "memory_mb": 1024, "width": 1280, "height": 800 }
+    },
+    {
+      "name": "sandbox-science",
+      "ref": "ghcr.io/latere-ai/sandbox-science:v0.0.16",
+      "digest": "sha256:...",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "label": "Science",
+      "description": "...",
+      "packages": { "pip": { "scipy": "1.11.4", "...": "..." }, "cran": { "lme4": "...", "...": "..." } }
     }
   ]
 }
@@ -302,6 +358,10 @@ images.
 - `defaults` is optional. It holds advisory resource hints (`cpu_milli`,
   `memory_mb`, and for a display, `width` and `height`) that an orchestrator
   may apply when it creates a sandbox.
+- `packages` is optional. It is the package list of an image that publishes
+  one, read from that release's image: per package manager (`pip`, `cran`),
+  each package's name and installed version. An orchestrator can check the
+  packages a session asks for against it before the session starts.
 - `version` is `1`. A change to the shape that breaks a reader raises it.
 
 The file is generated from [`catalog.yaml`](catalog.yaml), the list of images

@@ -17,9 +17,9 @@ Run `make hooks` once after cloning; it points git at `.githooks`.
 
 | Path | What it is |
 | --- | --- |
-| [`catalog.yaml`](catalog.yaml) | the list of images: name, build context, platforms, parent, label, description, resource hints. The Makefile targets, the CI build matrices, `test.sh`, and the published `catalog.json` all derive from it, and its fields are documented inline |
-| [`catalog.sh`](catalog.sh) | everything derived from the catalog: `lint`, `filters`, `matrix`, `compose`, `baseref`, `build`, `clean` |
-| `base/`, `gui/`, `harness/` | one build context per image |
+| [`catalog.yaml`](catalog.yaml) | the list of images: name, build context, platforms, parent, label, description, resource hints, and the path of the image's package list. The Makefile targets, the CI build matrices, `test.sh`, and the published `catalog.json` all derive from it, and its fields are documented inline |
+| [`catalog.sh`](catalog.sh) | everything derived from the catalog: `lint`, `filters`, `matrix`, `compose`, `packages`, `baseref`, `build`, `clean` |
+| `base/`, `gui/`, `harness/`, `science/` | one build context per image |
 | [`test.sh`](test.sh), [`catalog_test.sh`](catalog_test.sh), [`base/browser_test.sh`](base/browser_test.sh), [`base/sudo_test.sh`](base/sudo_test.sh), [`gui/entrypoint_test.sh`](gui/entrypoint_test.sh), [`gui/chromium-launch_test.sh`](gui/chromium-launch_test.sh), [`gui/session_test.sh`](gui/session_test.sh) | the seven test suites |
 | [`specs/`](specs/) | design records for changes to the catalog and the image contract |
 
@@ -30,6 +30,7 @@ make            # build every image in catalog order
 make base       # build one image; its parent chain builds first
 make gui
 make harness
+make science
 make test       # run the catalog tooling tests
 make clean      # remove the locally built images
 make hooks      # point git at .githooks
@@ -47,9 +48,9 @@ passed as the `BASE_IMAGE` build argument.
 
 | Command | What it covers | Needs |
 | --- | --- | --- |
-| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, and `catalog.json` composition, against the live catalog and fixtures; the base image's `chromium` and `playwright` commands (the flags a container needs, and a home or a browser directory that cannot be written) and its `sudo` (which apt installs succeed with nothing run where sudo cannot run, and that every other request reaches the system's sudo as given); the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
+| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, reading package lists out of images, and `catalog.json` composition, against the live catalog and fixtures; the base image's `chromium` and `playwright` commands (the flags a container needs, and a home or a browser directory that cannot be written) and its `sudo` (which apt installs succeed with nothing run where sudo cannot run, and that every other request reaches the system's sudo as given); the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
 | `bash gui/entrypoint_test.sh` | VNC password provisioning in the GUI image. It sources the script directly and needs no container | `bash` |
-| `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, the base image's Python libraries, PDF tools, fonts, `pip install`, and headless browser, display defaults, pinned CLI versions). The browser checks also run as a hosted sandbox runs an image: a read-only root file system with a writable `/tmp`, a volume at `/workspace`, `HOME` under `/tmp`, no new privileges, and no capabilities | a container runtime, `yq`, and network access from the containers, because the `pip install` checks reach PyPI, the Puppeteer and Playwright project checks the npm registry, and those Playwright projects download their browsers |
+| `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, the base image's Python libraries, PDF tools, fonts, `pip install`, and headless browser, display defaults, pinned CLI versions, the science image's Python and R packages, an `lme4` fit, `install.packages()` of a built package, and its package list). The browser and science checks also run as a hosted sandbox runs an image: a read-only root file system with a writable `/tmp`, a volume at `/workspace`, `HOME` under `/tmp`, no new privileges, and no capabilities | a container runtime, `yq`, `jq`, and network access from the containers, because the `pip install` and `uv pip install` checks reach PyPI, the `install.packages()` check Posit Package Manager, the Puppeteer and Playwright project checks the npm registry, and those Playwright projects download their browsers |
 
 `test.sh` pulls every image from the registry before checking it, so it
 verifies what is published, and a local build under the same name is replaced
@@ -93,6 +94,7 @@ where:
 - a context has no `Dockerfile`;
 - `platforms`, `label`, or `description` is missing, or `defaults` carries a
   key other than `cpu_milli`, `memory_mb`, `width`, and `height`;
+- `packages` is not an absolute path;
 - `from` names an image that is not declared earlier;
 - a parent chain is deeper than three images, because the pipelines build in
   three stages;
@@ -114,6 +116,9 @@ where:
 | Node.js | `NODE_MAJOR` in `base/Dockerfile` | the NodeSource signing key is vendored as `base/nodesource.gpg.key`, and the build checks its fingerprint against `NODE_KEY_FPR` |
 | Chrome for Testing | `CFT_VERSION` in `gui/Dockerfile` | amd64 only |
 | Claude Code, Codex | `CLAUDE_CODE_VERSION`, `CODEX_VERSION` in `harness/Dockerfile` | `test.sh` checks that the published CLIs report these versions |
+| R | `R_VERSION` in `science/Dockerfile` | a release in CRAN's `noble-cran40` repository; the build and `test.sh` check that R reports it. Posit builds packages for the current R releases, so move to a new minor release before Posit stops building for the old one. The repository's signing key is vendored as `science/cran.gpg.key`, and the build checks its fingerprint against `CRAN_KEY_FPR` |
+| R packages | `snapshot` in `science/Rprofile.site` | the Posit Package Manager snapshot date that both the build and a session's `install.packages()` install from. A later date updates every R package in the image; `R_PACKAGES` and `R_RECOMMENDED` in `science/Dockerfile` name what is installed |
+| libpysal, pingouin, pandas-flavor, spreg, uv | `LIBPYSAL_VERSION`, `PINGOUIN_VERSION`, `PANDAS_FLAVOR_VERSION`, `SPREG_VERSION`, `UV_VERSION` in `science/Dockerfile` | installed with pip beside Ubuntu's Python packages, so a new version must work with Ubuntu 24.04's NumPy 1.26, SciPy, and pandas; the build fails when pip finds a requirement unmet or a small fit fails |
 
 ## Releasing
 
@@ -127,18 +132,22 @@ flowchart LR
     base["sandbox-base<br/>linux/amd64, linux/arm64"]
     gui["sandbox-gui<br/>linux/amd64"]
     harness["sandbox-harness<br/>linux/amd64, linux/arm64"]
+    science["sandbox-science<br/>linux/amd64, linux/arm64"]
     base --> gui
     base --> harness
+    base --> science
   end
   chain -- "push, record each digest" --> ghcr[("ghcr.io/latere-ai")]
-  ghcr --> json["catalog.json<br/>digest-pinned, in object storage"]
+  ghcr --> json["catalog.json<br/>digest-pinned, with package lists, in object storage"]
 ```
 
 - **A `vX.Y.Z` tag** builds every image in catalog order and pushes each one as
   `vX.Y.Z`, `vX.Y`, and `latest`. A child image builds FROM the digest its
   parent pushed earlier in the same run, never from a moving tag. The run then
-  composes `catalog.json` from `catalog.yaml` and the recorded digests and
-  uploads it twice: to `${PREFIX}/catalog.json`, the current catalog, and to
+  reads the package list of each image that declares one out of the image at
+  its recorded digest, composes `catalog.json` from `catalog.yaml`, the
+  digests, and those lists, and uploads it twice: to
+  `${PREFIX}/catalog.json`, the current catalog, and to
   `${PREFIX}/history/<tag>.json`, a copy per release.
 - **Publishing a GitHub release** runs the same pipeline for the release's tag.
   For a tag that was already pushed, that builds and pushes the images again.
