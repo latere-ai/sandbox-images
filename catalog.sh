@@ -8,9 +8,15 @@
 #   ./catalog.sh filters                   paths-filter YAML for CI
 #   ./catalog.sh matrix <changed|--all>    build matrices from a changed set
 #                                          (changed = JSON array of image names)
-#   ./catalog.sh compose <tag> <commit> <digest-dir>
+#   ./catalog.sh compose <tag> <commit> <digest-dir> [packages-dir]
 #                                          print catalog.json (digest-dir holds
-#                                          one {"name","digest"} JSON per image)
+#                                          one {"name","digest"} JSON per image,
+#                                          packages-dir one <name>.json package
+#                                          list per image that declares one)
+#   ./catalog.sh packages <digest-dir> <out-dir>
+#                                          read each declared package list from
+#                                          the image at the digest digest-dir
+#                                          records, into <out-dir>/<name>.json
 #   ./catalog.sh baseref <from> <digest-dir> <require>
 #                                          BASE_IMAGE for a child build: the
 #                                          parent's digest from this run, or
@@ -118,6 +124,10 @@ lint() {
         fi
         json | jq -e ".images[$i].defaults // {} | keys - [\"cpu_milli\",\"memory_mb\",\"width\",\"height\"] == []" >/dev/null \
             || err "$n: unknown defaults key"
+        # packages is read from the image, where only an absolute path
+        # names one file whatever the working directory.
+        json | jq -e ".images[$i].packages // \"/\" | type == \"string\" and startswith(\"/\")" >/dev/null \
+            || err "$n: packages must be an absolute path in the image"
         # Every file the Dockerfile COPYs must exist in the context and
         # survive its .dockerignore.
         if [[ -f "$ctx/Dockerfile" ]]; then
@@ -190,17 +200,28 @@ matrix() {
            any_stage: ($stages | map(length > 0))}'
 }
 
-# compose <tag> <commit> <digest-dir> — join catalog.yaml with the digests
-# recorded by the build jobs into the published catalog.json contract.
+# compose <tag> <commit> <digest-dir> [packages-dir] — join catalog.yaml
+# with the digests recorded by the build jobs, and with the package lists
+# read from the images (see packages), into the published catalog.json
+# contract. An image that declares `packages` must have its list in
+# packages-dir, as every image must have a digest: a release that lost one
+# fails rather than publish an entry without it.
 compose() {
-    local tag="${1:?usage: catalog.sh compose <tag> <commit> <digest-dir>}"
+    local tag="${1:?usage: catalog.sh compose <tag> <commit> <digest-dir> [packages-dir]}"
     local commit="${2:?commit required}"
     local dir="${3:?digest dir required}"
-    local digests
+    local pdir="${4:-}" digests lists='{}' f
     digests=$(jq -s 'map({(.name): .digest}) | add // {}' "$dir"/*.json 2>/dev/null || echo '{}')
+    if [[ -n "$pdir" ]]; then
+        for f in "$pdir"/*.json; do
+            [[ -e "$f" ]] || continue
+            lists=$(jq --arg name "$(basename "$f" .json)" --slurpfile list "$f" \
+                '. + {($name): $list[0]}' <<<"$lists")
+        done
+    fi
     json | jq --arg tag "$tag" --arg commit "$commit" \
               --arg repo "${GITHUB_REPOSITORY:-latere-ai/sandbox-images}" \
-              --argjson digests "$digests" '
+              --argjson digests "$digests" --argjson lists "$lists" '
         .registry as $reg
         | {version: 1,
            source: {repo: $repo, commit: $commit, tag: $tag},
@@ -208,9 +229,47 @@ compose() {
              | . as $i
              | ($digests[$i.name] // "") as $d
              | if $d == "" then error("missing digest for \($i.name)") else . end
+             | if $i.packages and ($lists[$i.name] == null)
+               then error("missing package list for \($i.name)") else . end
              | {name, ref: "\($reg)/\(.name):\($tag)", digest: $d,
                 platforms, label, description}
-               + (if $i.defaults then {defaults: $i.defaults} else {} end)]}'
+               + (if $i.defaults then {defaults: $i.defaults} else {} end)
+               + (if $i.packages then {packages: $lists[$i.name]} else {} end)]}'
+}
+
+# packages <digest-dir> <out-dir> — for every image that declares
+# `packages`, copy that file out of the image at the digest this run
+# recorded, into <out-dir>/<name>.json. The image is created, not run, for
+# its first platform, so no emulation is needed for a platform the host
+# lacks. The file must be one JSON object of package managers, each mapping
+# a package name to its version, or the release fails here.
+packages() {
+    local dir="${1:?usage: catalog.sh packages <digest-dir> <out-dir>}"
+    local out="${2:?out dir required}" reg entry name path platform digest id
+    reg=$(json | jq -r '.registry')
+    mkdir -p "$out"
+    while read -r entry; do
+        [[ -n "$entry" ]] || continue
+        name=$(jq -r '.name' <<<"$entry")
+        path=$(jq -r '.packages' <<<"$entry")
+        platform=$(jq -r '.platforms[0]' <<<"$entry")
+        digest=$(jq -r '.digest // ""' "$dir/$name.json" 2>/dev/null || echo "")
+        if [[ -z "$digest" ]]; then
+            echo "packages: no digest recorded for '$name'" >&2
+            exit 1
+        fi
+        id=$($RUNTIME create --platform "$platform" "$reg/$name@$digest")
+        if ! $RUNTIME cp "$id:$path" "$out/$name.json"; then
+            $RUNTIME rm "$id" >/dev/null || true
+            echo "packages: $name has no $path" >&2
+            exit 1
+        fi
+        $RUNTIME rm "$id" >/dev/null
+        jq -e 'type == "object" and all(.[]; type == "object" and all(.[]; type == "string"))' \
+            "$out/$name.json" >/dev/null 2>&1 \
+            || { echo "packages: $name's $path is not a JSON object of package managers to name-version maps" >&2; exit 1; }
+        echo "packages: $name: $(jq -r 'to_entries | map("\(.key) \(.value | length)") | join(", ")' "$out/$name.json")"
+    done < <(json | jq -c '.images[] | select(.packages != null)')
 }
 
 # baseref <from> <digest-dir> <require> — resolve the BASE_IMAGE a child
@@ -285,8 +344,9 @@ case "$cmd" in
     filters) filters ;;
     matrix)  matrix "$@" ;;
     compose) compose "$@" ;;
+    packages) packages "$@" ;;
     baseref) baseref "$@" ;;
     build)   build "$@" ;;
     clean)   clean ;;
-    *)       grep '^#' "$0" | sed -n '2,19p' >&2; exit 1 ;;
+    *)       grep '^#' "$0" | sed -n '2,25p' >&2; exit 1 ;;
 esac

@@ -344,12 +344,25 @@ jobs:
           pattern: digest-*
           path: digests
           merge-multiple: true
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # An image that declares `packages` in catalog.yaml carries its
+      # package list as a file; it is read from the image at the digest this
+      # run pushed, so the list published is the one in that image.
+      - name: Read package lists
+        env:
+          RUNTIME: docker
+        run: ./catalog.sh packages digests packages
       - name: Compose catalog.json
         id: compose
         env:
           TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
         run: |
-          ./catalog.sh compose "$TAG" "$GITHUB_SHA" digests > catalog.json
+          ./catalog.sh compose "$TAG" "$GITHUB_SHA" digests packages > catalog.json
           jq . catalog.json
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - name: Upload to object storage

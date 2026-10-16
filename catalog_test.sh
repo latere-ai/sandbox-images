@@ -78,8 +78,10 @@ printf '{"name":"sandbox-base","digest":"sha256:aaa"}' > "$TMP/digests/sandbox-b
 printf '{"name":"sandbox-gui","digest":"sha256:bbb"}' > "$TMP/digests/sandbox-gui.json"
 printf '{"name":"sandbox-harness","digest":"sha256:ccc"}' > "$TMP/digests/sandbox-harness.json"
 printf '{"name":"sandbox-science","digest":"sha256:ddd"}' > "$TMP/digests/sandbox-science.json"
+mkdir -p "$TMP/packages"
+printf '{"pip":{"scipy":"1.11.4"},"cran":{"lme4":"2.0-6"}}' > "$TMP/packages/sandbox-science.json"
 
-c=$(./catalog.sh compose v9.9.9 deadbeef "$TMP/digests")
+c=$(./catalog.sh compose v9.9.9 deadbeef "$TMP/digests" "$TMP/packages")
 [[ "$(jq -r '.version' <<<"$c")" == "1" ]] \
     && pass "contract version 1" || fail "contract version wrong"
 [[ "$(jq -r '.source.tag' <<<"$c")" == "v9.9.9" && "$(jq -r '.source.commit' <<<"$c")" == "deadbeef" ]] \
@@ -93,12 +95,78 @@ c=$(./catalog.sh compose v9.9.9 deadbeef "$TMP/digests")
 [[ "$(jq -r '.images[0] | has("defaults")' <<<"$c")" == "false" ]] \
     && pass "base omits defaults" || fail "base must not carry empty defaults"
 
-rm "$TMP/digests/sandbox-gui.json"
+[[ "$(jq -c '.images[] | select(.name == "sandbox-science") | .packages' <<<"$c")" == '{"pip":{"scipy":"1.11.4"},"cran":{"lme4":"2.0-6"}}' ]] \
+    && pass "package list read from the image carried into contract" \
+    || fail "science packages missing: $(jq -c '.images[] | select(.name == "sandbox-science")' <<<"$c")"
+[[ "$(jq -c '[.images[] | select(has("packages")) | .name]' <<<"$c")" == '["sandbox-science"]' ]] \
+    && pass "images that declare no package list carry none" \
+    || fail "packages on an image that declares none: $c"
+
+# A release that lost a package list must not publish the image's entry
+# without it, as with a lost digest.
 if ./catalog.sh compose v9.9.9 deadbeef "$TMP/digests" >/dev/null 2>&1; then
+    fail "compose must fail when a declared package list was not read"
+else
+    pass "compose fails on a missing package list"
+fi
+
+rm "$TMP/digests/sandbox-gui.json"
+if ./catalog.sh compose v9.9.9 deadbeef "$TMP/digests" "$TMP/packages" >/dev/null 2>&1; then
     fail "compose must fail on a missing digest"
 else
     pass "compose fails on a missing digest"
 fi
+
+# --- packages: read from the image by a container runtime. A stand-in
+# runtime records its calls and serves the file named by FAKE_FILE, so the
+# checks need no image and no registry. ---
+section "packages"
+FAKE="$TMP/fake-runtime"
+cat > "$FAKE" <<'EOF'
+#!/bin/bash
+echo "$*" >> "$FAKE_LOG"
+case "$1" in
+    create) echo fake-id ;;
+    cp) [[ -n "${FAKE_FILE:-}" ]] || exit 1; cp "$FAKE_FILE" "$3" ;;
+    rm) ;;
+    *) exit 2 ;;
+esac
+EOF
+chmod +x "$FAKE"
+export FAKE_LOG="$TMP/fake.log"
+read_lists() { : > "$FAKE_LOG"; rm -rf "$TMP/read"; RUNTIME="$FAKE" ./catalog.sh packages "$1" "$TMP/read" >/dev/null 2>&1; }
+science_path=$(yq -r '.images[] | select(.name == "sandbox-science") | .packages' catalog.yaml)
+science_platform=$(yq -r '.images[] | select(.name == "sandbox-science") | .platforms[0]' catalog.yaml)
+printf '{"pip":{"numpy":"1.26.4"},"cran":{"MASS":"7.3-65"}}' > "$TMP/list.json"
+
+FAKE_FILE="$TMP/list.json" read_lists "$TMP/digests" && cmp -s "$TMP/list.json" "$TMP/read/sandbox-science.json" \
+    && pass "reads the package list out of the image" \
+    || fail "package list not read: $(cat "$FAKE_LOG")"
+grep -qx "create --platform $science_platform ghcr.io/latere-ai/sandbox-science@sha256:ddd" "$FAKE_LOG" \
+    && pass "addresses the image by the digest this run recorded, on its first platform" \
+    || fail "wrong image or platform: $(cat "$FAKE_LOG")"
+grep -qx "cp fake-id:$science_path $TMP/read/sandbox-science.json" "$FAKE_LOG" && grep -qx 'rm fake-id' "$FAKE_LOG" \
+    && pass "copies the declared path, then removes the container" \
+    || fail "wrong copy or container left behind: $(cat "$FAKE_LOG")"
+[[ "$(grep -c '^create' "$FAKE_LOG")" == "$(yq '[.images[] | select(.packages)] | length' catalog.yaml)" ]] \
+    && pass "reads only the images that declare a package list" \
+    || fail "read images without a package list: $(cat "$FAKE_LOG")"
+
+FAKE_FILE="" read_lists "$TMP/digests" \
+    && fail "packages must fail when the image lacks the file" \
+    || { grep -qx 'rm fake-id' "$FAKE_LOG" \
+        && pass "fails when the image lacks the file, and removes the container" \
+        || fail "container left behind after a failed copy: $(cat "$FAKE_LOG")"; }
+
+printf '{"pip":["numpy"]}' > "$TMP/bad.json"
+FAKE_FILE="$TMP/bad.json" read_lists "$TMP/digests" \
+    && fail "packages must reject a list that is not name-version maps" \
+    || pass "rejects a list that is not name-version maps"
+
+mkdir -p "$TMP/no-digest"
+FAKE_FILE="$TMP/list.json" read_lists "$TMP/no-digest" \
+    && fail "packages must fail without a recorded digest" \
+    || pass "fails without a recorded digest rather than read another image"
 
 # --- lint: live repo (schema only; the workflow grep gate runs in CI
 # and is covered by the fixtures below) ---
@@ -185,6 +253,24 @@ EOF
 (cd "$TMP/repo" && ./catalog.sh lint) >/dev/null 2>&1 \
     && fail "lint must reject unknown defaults keys" \
     || pass "lint rejects unknown defaults keys"
+
+fixture <<'EOF'
+version: 1
+registry: ghcr.io/latere-ai
+images:
+  - name: sandbox-base
+    context: base
+    platforms: [linux/amd64]
+    label: Base
+    description: x
+    packages: usr/share/packages.json
+EOF
+(cd "$TMP/repo" && ./catalog.sh lint /dev/null) >/dev/null 2>&1 \
+    && fail "lint must reject a relative packages path" \
+    || pass "lint rejects a relative packages path"
+(cd "$TMP/repo" && sed -i.bak 's|packages: usr/|packages: /usr/|' catalog.yaml && ./catalog.sh lint /dev/null) >/dev/null 2>&1 \
+    && pass "lint accepts an absolute packages path" \
+    || fail "lint must accept an absolute packages path"
 
 # A deny-all .dockerignore with an allow-list drops any COPY source the
 # list forgets. The image builds fine locally when the file is present
@@ -423,6 +509,14 @@ rel=.github/workflows/release.yml
 [[ -f "$rel" ]] && yq -r '.jobs.publish-catalog.if' "$rel" | grep -q 'always()' \
     && pass "publish-catalog survives an empty build stage" \
     || fail "publish-catalog would be skipped whenever a stage has no images"
+
+# A release reads the package lists the catalog declares and hands them to
+# compose; without either, compose fails the release for a declared list.
+runs=$(yq -r '.jobs.publish-catalog.steps[].run // ""' "$rel")
+grep -q '\./catalog\.sh packages digests packages' <<<"$runs" \
+    && grep -q '\./catalog\.sh compose .* digests packages' <<<"$runs" \
+    && pass "publish-catalog reads the package lists and composes with them" \
+    || fail "publish-catalog does not pass the images' package lists to compose"
 
 # Every stage a release actually runs must record digests, or compose
 # has nothing to pin and baseref has nothing to resolve.

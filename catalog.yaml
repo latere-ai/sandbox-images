@@ -14,6 +14,10 @@
 #   description (required) one-line summary shown by consumers
 #   defaults    (optional) advisory per-image resource hints consumers may
 #               apply at sandbox creation: cpu_milli, memory_mb, width, height
+#   packages    (optional) absolute path of the image's package list, a JSON
+#               object of package managers (pip, cran) each mapping a package
+#               name to its version; a release reads it from the built image
+#               into the image's catalog.json entry
 version: 1
 registry: ghcr.io/latere-ai
 images:
@@ -45,3 +49,4 @@ images:
     from: sandbox-base
     label: Science
     description: Base plus SciPy, statsmodels, scikit-learn, pingouin, and spatial statistics in Python, and R with tidyverse, lme4, and spdep.
+    packages: /usr/share/sandbox-images/packages.json
