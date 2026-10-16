@@ -1,6 +1,6 @@
 ---
 title: Science image and per-image package lists
-status: drafted
+status: implemented
 depends_on: [002-catalog-publish.md]
 affects:
   - science/ (new)
@@ -14,6 +14,7 @@ affects:
 effort: medium
 created: 2026-10-16
 updated: 2026-10-16
+implemented: 2026-10-16
 author: changkun
 dispatched_task_id: null
 ---
@@ -24,7 +25,7 @@ dispatched_task_id: null
 
 Statistical work, such as reproducing the analysis of a published paper,
 needs more than the base image holds: SciPy, statsmodels, and their
-neighbours in Python, and R with the packages for mixed models, ANOVA, and
+neighbors in Python, and R with the packages for mixed models, ANOVA, and
 spatial regression. In a hosted sandbox none of it can be added with apt,
 because the root file system is read-only and nothing runs as root. pip and
 R can install only into `/tmp` or `/workspace`, and R without binary
@@ -45,9 +46,10 @@ already has.
 
 - **Python**, the same way the base installs its libraries: Ubuntu 24.04's
   own packages for SciPy, statsmodels, scikit-learn, seaborn, NetworkX,
-  libpysal, Shapely, geopy, and pyreadstat. pingouin, spreg, and uv are not
-  in Ubuntu; pip installs them into `/usr/local` with `--no-deps`, at pinned
-  versions whose requirements Ubuntu's packages meet. The build fails if pip
+  Shapely, geopy, and pyreadstat. pingouin, spreg, and uv are not in
+  Ubuntu, and Ubuntu's libpysal records its version as 0.0.0; pip installs
+  these four into `/usr/local` with `--no-deps`, at pinned versions whose
+  requirements Ubuntu's packages meet. The build fails if pip
   reports a broken requirement, if a package exists both in Ubuntu's and in
   pip's directory, or if a small pingouin or spreg fit fails.
 - **R** from CRAN's Ubuntu repository (`noble-cran40`), pinned to one
@@ -121,3 +123,42 @@ list and none was read, as it does for a missing digest.
 - Package lists for the other images. The field is there for them.
 - Composing images (science with a display); each combination would be its
   own catalog entry.
+
+## Outcome (2026-10-16)
+
+Implemented as designed. Where the build differs from the first draft of
+the design:
+
+- libpysal comes from PyPI (4.13.0), not from Ubuntu. Ubuntu's package
+  records its version as 0.0.0, so `pip check` failed on spreg's requirement,
+  and a session's `pip install` of anything needing libpysal would have
+  installed a second copy, with NumPy 2 behind it. Newer pingouin, spreg,
+  and libpysal releases require NumPy 2; the pins are the last releases that
+  run on Ubuntu's NumPy 1.26 stack, and the build's spreg and pingouin fits
+  confirm it.
+- The duplicate check compares directories, not records: Ubuntu's xarray
+  carries two records of itself in one directory.
+- `list-packages` reads the Ubuntu package's version for the few Python
+  packages whose records say 0.0.0 (kiwisolver, mpmath).
+- R's recommended packages come from Posit with the rest, not from apt, so
+  every compiled package comes from one source. `r-base-dev` is not
+  installed: a package Posit has not built needs a compiler and libraries
+  the image may lack.
+- The shared-library check found one library the first list missed, libuv,
+  which tidyverse's `fs` links against.
+- A session's `install.packages()` uses the same Posit snapshot as the
+  build, so it never upgrades a package the image holds.
+- `catalog.sh packages` reads a list by `create` and `cp`, not by running
+  the image, so no emulation is needed for the image's first platform.
+- The build does not run uv: under QEMU, when an image is built for another
+  platform, `uv --version` crashes with a segmentation fault. `test.sh`
+  runs it on the image's own platform.
+
+Verified on local builds FROM the published `sandbox-base` v0.0.22:
+`make test`, `./catalog.sh lint`, and `LOCAL=1 bash test.sh latest
+sandbox-science` pass on arm64. The amd64 build, under QEMU on an arm64
+host, passes every check but the two that run uv, which crash there. The
+image is 3.90 GB uncompressed on arm64 (656 MB more than the base) and
+3.94 GB on amd64 (664 MB more). The install check discriminates: without the site
+profile `install.packages()` fails for want of a writable library, and
+without the user agent Posit serves the source and gcc compiles it.
