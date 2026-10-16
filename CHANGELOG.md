@@ -5,6 +5,8 @@ work in them, one section per release.
 
 ## Unreleased
 
+## v0.0.23 - 2026-10-16
+
 ### Added
 
 - `sandbox-science`, a new image for statistical analysis, built on
