@@ -1,0 +1,49 @@
+#!/bin/bash
+#
+# Prints the packages the image holds, per package manager, as one JSON
+# object: {"pip": {name: version}, "cran": {name: version}}.
+#
+# pip is every Python distribution the system Python sees, Ubuntu's and
+# pip's alike, by its normalized name (PEP 503: lowercase, with runs of
+# "-", "_" and "." as one "-"), which is how pip matches a requested name.
+# The Python runs isolated, so a user's own installs are not counted. A few
+# of Ubuntu's packages record their version as 0.0.0, because they were
+# built without the source history their version is read from; for those
+# the version is the upstream part of the Ubuntu package's own.
+#
+# cran is every installed R package, by R's own name, which is case
+# sensitive. Where a package is in more than one library, the version is
+# the one library() loads, from the first library on the path. R runs with
+# --vanilla, so the site profile neither adds nor creates a user library.
+set -euo pipefail
+
+pip=$(python3 -I -c '
+import importlib.metadata as metadata, json, re, subprocess
+
+def version(dist):
+    if dist.version != "0.0.0":
+        return dist.version
+    owner = subprocess.run(["dpkg", "-S", str(dist._path)], capture_output=True, text=True, check=True)
+    package = owner.stdout.split(":")[0]
+    full = subprocess.run(["dpkg-query", "-W", "-f=${Version}", package], capture_output=True, text=True, check=True)
+    return re.sub(r"-[^-]*$", "", re.sub(r"^[0-9]+:", "", full.stdout))
+
+found = {}
+for dist in metadata.distributions():
+    name = dist.metadata["Name"]
+    if name:
+        key = re.sub(r"[-_.]+", "-", name).lower()
+        if key not in found:
+            found[key] = version(dist)
+print(json.dumps(found))
+')
+
+cran=$(Rscript --vanilla -e '
+installed <- installed.packages()
+installed <- installed[!duplicated(installed[, "Package"]), , drop = FALSE]
+writeLines(paste(installed[, "Package"], installed[, "Version"], sep = "\t"))
+' | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}')
+
+jq -n --argjson pip "$pip" --argjson cran "$cran" \
+    '{pip: ($pip | to_entries | sort_by(.key) | from_entries),
+      cran: ($cran | to_entries | sort_by(.key | ascii_downcase) | from_entries)}'

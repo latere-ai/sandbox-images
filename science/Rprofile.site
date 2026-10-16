@@ -1,0 +1,31 @@
+# R's site profile in sandbox-science. R reads it at every start, except
+# when started with --vanilla or --no-site-file.
+local({
+  # Packages come from Posit Package Manager's builds for Ubuntu 24.04, at
+  # one snapshot date. install.packages() then fetches a built package: it
+  # installs in seconds and compiles nothing, and it fits the packages the
+  # image installed from the same snapshot. Posit serves the built package
+  # only to a client whose user agent names R's version and platform, as
+  # below; any other client gets the source.
+  snapshot <- "2026-10-15"
+  options(
+    repos = c(CRAN = paste0("https://packagemanager.posit.co/cran/__linux__/noble/", snapshot)),
+    HTTPUserAgent = sprintf(
+      "R/%s R (%s)", getRversion(),
+      paste(getRversion(), R.version[["platform"]], R.version[["arch"]], R.version[["os"]])
+    )
+  )
+
+  # install.packages() puts a package in the user library, R_LIBS_USER,
+  # which is under HOME: the image's own libraries are not writable. R uses
+  # that library only once it exists, and outside an interactive session
+  # install.packages() fails rather than create it, so it is created here,
+  # under whatever HOME the session has. Where HOME cannot be written, the
+  # library is left out and R starts as usual.
+  lib <- strsplit(Sys.getenv("R_LIBS_USER"), ":", fixed = TRUE)[[1]]
+  if (length(lib) > 0 && nzchar(lib[1])) {
+    lib <- path.expand(lib[1])
+    if (!dir.exists(lib)) dir.create(lib, recursive = TRUE, showWarnings = FALSE)
+    if (dir.exists(lib)) .libPaths(c(lib, .libPaths()))
+  }
+})

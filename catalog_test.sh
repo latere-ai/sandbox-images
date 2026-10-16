@@ -42,9 +42,9 @@ m=$(./catalog.sh matrix --all)
     && pass "--all: harness in deps, multi-arch" || fail "--all: harness wrong: $m"
 
 m=$(./catalog.sh matrix '["sandbox-base"]')
-[[ "$(jq -r '.any_root' <<<"$m")" == "true" && "$(jq -r '.deps.image | length' <<<"$m")" == "2" ]] \
-    && pass "base change propagates to gui + harness (from edges)" \
-    || fail "base change must rebuild both deps: $m"
+[[ "$(jq -r '.any_root' <<<"$m")" == "true" && "$(jq -c '.deps.image | map(.name)' <<<"$m")" == '["sandbox-gui","sandbox-harness","sandbox-science"]' ]] \
+    && pass "base change propagates to gui, harness, and science (from edges)" \
+    || fail "base change must rebuild every image built on it: $m"
 
 m=$(./catalog.sh matrix '["sandbox-gui"]')
 [[ "$(jq -r '.any_root' <<<"$m")" == "false" && "$(jq -r '.deps.image | length' <<<"$m")" == "1" ]] \
@@ -54,12 +54,19 @@ m=$(./catalog.sh matrix '["sandbox-harness"]')
 [[ "$(jq -r '.deps.image | length' <<<"$m")" == "1" && "$(jq -r '.deps.image[0].name' <<<"$m")" == "sandbox-harness" ]] \
     && pass "harness-only change builds harness alone" || fail "harness-only change wrong: $m"
 
+m=$(./catalog.sh matrix '["sandbox-science"]')
+[[ "$(jq -r '.any_root' <<<"$m")" == "false" && "$(jq -c '.deps.image | map(.name)' <<<"$m")" == '["sandbox-science"]' ]] \
+    && pass "science-only change builds science alone" || fail "science-only change wrong: $m"
+[[ "$(jq -r '.deps.image[0].platforms' <<<"$m")" == *"linux/amd64"* ]] \
+    && pass "science builds for linux/amd64, the platform hosted sandboxes run" \
+    || fail "science must build for linux/amd64: $(jq -r '.deps.image[0].platforms' <<<"$m")"
+
 m=$(./catalog.sh matrix '[]')
 [[ "$(jq -r '.any_root' <<<"$m")" == "false" && "$(jq -r '.any_dep' <<<"$m")" == "false" ]] \
     && pass "empty change set builds nothing" || fail "empty change set wrong: $m"
 
 m=$(./catalog.sh matrix --all)
-[[ "$(jq -c '.stages | map(.image | map(.name))' <<<"$m")" == '[["sandbox-base"],["sandbox-gui","sandbox-harness"],[]]' ]] \
+[[ "$(jq -c '.stages | map(.image | map(.name))' <<<"$m")" == '[["sandbox-base"],["sandbox-gui","sandbox-harness","sandbox-science"],[]]' ]] \
     && pass "--all: images staged by FROM depth" || fail "--all: stages wrong: $(jq -c .stages <<<"$m")"
 [[ "$(jq -c '.any_stage' <<<"$m")" == '[true,true,false]' ]] \
     && pass "--all: any_stage flags per stage" || fail "--all: any_stage wrong"
@@ -70,6 +77,7 @@ mkdir -p "$TMP/digests"
 printf '{"name":"sandbox-base","digest":"sha256:aaa"}' > "$TMP/digests/sandbox-base.json"
 printf '{"name":"sandbox-gui","digest":"sha256:bbb"}' > "$TMP/digests/sandbox-gui.json"
 printf '{"name":"sandbox-harness","digest":"sha256:ccc"}' > "$TMP/digests/sandbox-harness.json"
+printf '{"name":"sandbox-science","digest":"sha256:ddd"}' > "$TMP/digests/sandbox-science.json"
 
 c=$(./catalog.sh compose v9.9.9 deadbeef "$TMP/digests")
 [[ "$(jq -r '.version' <<<"$c")" == "1" ]] \

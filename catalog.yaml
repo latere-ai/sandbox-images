@@ -39,3 +39,9 @@ images:
     from: sandbox-base
     label: Harness
     description: Base plus the Claude Code and Codex CLIs for agent workloads.
+  - name: sandbox-science
+    context: science
+    platforms: [linux/amd64, linux/arm64]
+    from: sandbox-base
+    label: Science
+    description: Base plus SciPy, statsmodels, scikit-learn, pingouin, and spatial statistics in Python, and R with tidyverse, lme4, and spdep.
