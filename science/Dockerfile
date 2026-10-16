@@ -48,6 +48,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # told to prefer the image's Python to downloading one into the home
 # directory, and to copy from its cache rather than link, since the cache
 # under HOME and a project under /workspace are on different file systems.
+# The build does not run it: under QEMU, as when one platform is built on
+# another, uv crashes with a segmentation fault, which it does not do on
+# its own platform. test.sh runs it.
 ARG LIBPYSAL_VERSION=4.13.0
 ARG PINGOUIN_VERSION=0.6.1
 ARG PANDAS_FLAVOR_VERSION=0.7.0
@@ -69,7 +72,6 @@ RUN pip install --no-deps --no-cache-dir \
         rng = np.random.default_rng(0); x = rng.normal(size=(60, 1)); y = 2 * x + rng.normal(size=(60, 1)); \
         beta = spreg.OLS(y, x).betas[1, 0]; assert abs(beta - 2) < 0.5, beta; \
         assert len(pingouin.ttest(x[:, 0], y[:, 0])) == 1" && \
-    uv --version | grep -Eq "^uv ${UV_VERSION}( |\$)" && \
     rm -rf /tmp/mplconfig /root/.cache
 ENV UV_PYTHON_PREFERENCE=system
 ENV UV_LINK_MODE=copy
