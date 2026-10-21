@@ -5,6 +5,8 @@ work in them, one section per release.
 
 ## Unreleased
 
+## v0.0.25 - 2026-10-21
+
 ### Fixed
 
 - `sandbox-gui`: the browser policy v0.0.24 added now takes effect, so the
