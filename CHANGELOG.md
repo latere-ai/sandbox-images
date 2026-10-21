@@ -5,6 +5,14 @@ work in them, one section per release.
 
 ## Unreleased
 
+### Fixed
+
+- `sandbox-gui`: the browser policy v0.0.24 added now takes effect, so the
+  browser opens with no bar saying Chrome for Testing is for automated
+  testing only. In v0.0.24 the policy's directories under
+  `/etc/opt/chrome_for_testing` were ones only root could enter, and the
+  browser, which runs as `agent`, never read it.
+
 ## v0.0.24 - 2026-10-21
 
 ### Fixed
