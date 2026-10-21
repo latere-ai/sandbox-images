@@ -5,6 +5,8 @@ work in them, one section per release.
 
 ## Unreleased
 
+## v0.0.24 - 2026-10-21
+
 ### Fixed
 
 - `sandbox-gui`: the browser no longer opens with a bar saying Chrome for
