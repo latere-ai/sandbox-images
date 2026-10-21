@@ -5,6 +5,14 @@ work in them, one section per release.
 
 ## Unreleased
 
+### Fixed
+
+- `sandbox-gui`: the browser no longer opens with a bar saying Chrome for
+  Testing is for automated testing only, or one about an unsupported
+  command-line flag. A managed policy at
+  `/etc/opt/chrome_for_testing/policies/managed/gui.json` turns both off, so
+  the browser's menu says it is managed by an organization.
+
 ## v0.0.23 - 2026-10-16
 
 ### Added
