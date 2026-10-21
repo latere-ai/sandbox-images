@@ -38,9 +38,26 @@ test_policy_installed_where_read() {
     fi
 }
 
+# The browser runs as agent, so every directory on the way to the policy must
+# be one agent can enter. COPY --chmod=0644 gives the directories it creates
+# that mode, which only root can enter, so the Dockerfile makes them 0755
+# before the COPY.
+test_policy_directory_enterable() {
+    local name="Dockerfile: the policy's directories are made 0755 before the policy is copied in"
+    local made copied
+    made="$(grep -n -E '^RUN install -d -m 0755 /etc/opt/chrome_for_testing/policies/managed$' Dockerfile | cut -d: -f1)"
+    copied="$(grep -n -E '^COPY .*chromium-policy\.json ' Dockerfile | cut -d: -f1)"
+    if [[ -n "$made" && -n "$copied" ]] && (( made < copied )); then
+        pass "$name"
+    else
+        fail "$name"
+    fi
+}
+
 echo "chromium-policy:"
 test_policy_turns_off_warnings
 test_policy_installed_where_read
+test_policy_directory_enterable
 
 if [[ "$FAILURES" -gt 0 ]]; then
     echo "${FAILURES} failure(s)"

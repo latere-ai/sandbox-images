@@ -516,6 +516,8 @@ if selected sandbox-gui; then
 
     # The managed policy that keeps the testing-build and unsupported-flag
     # bars off every window is where this build reads policies, and says so.
+    # It is read as agent, the user the browser runs as: a directory on the
+    # way that only root can enter hides the policy from the browser.
     policy=$(run_in "$GUI" 'cat /etc/opt/chrome_for_testing/policies/managed/gui.json')
     [[ "$(jq -r '.CommandLineFlagSecurityWarningsEnabled' <<<"$policy" 2>/dev/null)" == "false" ]] \
         && pass "chromium: managed policy turns off the warning bars" \

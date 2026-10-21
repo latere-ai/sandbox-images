@@ -74,7 +74,10 @@ COPY --chmod=0755 chromium-launch /usr/local/bin/chromium-launch
 # --no-sandbox. A sandbox's browser is for whoever works in it, so a managed
 # policy turns both off: CommandLineFlagSecurityWarningsEnabled false, read
 # from the directory this build reads policies from. The browser's menu then
-# says it is managed, which is this policy.
+# says it is managed, which is this policy. The directories are made first:
+# COPY --chmod gives the directories it creates the file's mode, 0644, which
+# no user but root can enter, and the browser runs as agent.
+RUN install -d -m 0755 /etc/opt/chrome_for_testing/policies/managed
 COPY --chmod=0644 chromium-policy.json /etc/opt/chrome_for_testing/policies/managed/gui.json
 
 # The workload commands that start something on the display: gui-browser, one
