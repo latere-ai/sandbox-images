@@ -118,9 +118,11 @@ on its own under Docker or Podman.
   the browser profile under `$TMPDIR` (or `/tmp`) instead. Behind a proxy
   whose `https_proxy` URL carries a credential, as a Cella sandbox's egress
   gateway does, it hands Chromium the proxy address and signs in for it, so
-  no one is asked for the proxy's password. In this image `chromium` is that
-  Chrome for Testing; Playwright and Puppeteer keep the headless browser
-  from the base image.
+  no one is asked for the proxy's password. A managed policy keeps the bars
+  Chrome for Testing and an unsupported flag put over each window off, so
+  the browser's menu says it is managed by an organization. In this image
+  `chromium` is that Chrome for Testing; Playwright and Puppeteer keep the
+  headless browser from the base image.
 - Two commands that start something on the display and keep it running:
   `gui-browser [url...]`, one maximized browser that opens again when it is
   closed, and `gui-desktop [url...]`, a taskbar of the open windows with

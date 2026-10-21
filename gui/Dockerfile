@@ -69,6 +69,14 @@ COPY --chmod=0755 vncpass.sh /usr/local/bin/gui-vncpass
 COPY --chmod=0755 supervisor.sh /usr/local/bin/gui-supervisor
 COPY --chmod=0755 chromium-launch /usr/local/bin/chromium-launch
 
+# Chrome for Testing covers each window with a bar saying the build is for
+# automated testing, and Chromium another for an unsupported flag such as
+# --no-sandbox. A sandbox's browser is for whoever works in it, so a managed
+# policy turns both off: CommandLineFlagSecurityWarningsEnabled false, read
+# from the directory this build reads policies from. The browser's menu then
+# says it is managed, which is this policy.
+COPY --chmod=0644 chromium-policy.json /etc/opt/chrome_for_testing/policies/managed/gui.json
+
 # The workload commands that start something on the display: gui-browser, one
 # browser, and gui-desktop, a taskbar with the desktop's programs and a
 # browser. Each draws on the display this image's entrypoint or a desktop

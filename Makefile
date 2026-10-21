@@ -19,6 +19,7 @@ test:
 	bash base/browser_test.sh
 	bash base/sudo_test.sh
 	bash gui/chromium-launch_test.sh
+	bash gui/chromium-policy_test.sh
 	bash gui/session_test.sh
 
 clean:

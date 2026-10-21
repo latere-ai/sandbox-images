@@ -4,6 +4,7 @@
 !vncpass.sh
 !supervisor.sh
 !chromium-launch
+!chromium-policy.json
 !session.sh
 !gui-browser
 !gui-desktop

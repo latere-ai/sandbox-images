@@ -514,6 +514,13 @@ if selected sandbox-gui; then
     out=$(run_in "$GUI" 'chromium --version') && [[ "$out" == *"$CFT_PIN"* ]] \
         && pass "chromium: $out" || fail "chromium is not Chrome for Testing $CFT_PIN (got: $out)"
 
+    # The managed policy that keeps the testing-build and unsupported-flag
+    # bars off every window is where this build reads policies, and says so.
+    policy=$(run_in "$GUI" 'cat /etc/opt/chrome_for_testing/policies/managed/gui.json')
+    [[ "$(jq -r '.CommandLineFlagSecurityWarningsEnabled' <<<"$policy" 2>/dev/null)" == "false" ]] \
+        && pass "chromium: managed policy turns off the warning bars" \
+        || fail "chromium: managed policy missing or wrong (got: $policy)"
+
     out=$(run_in "$GUI" 'printf "%s %s" "$DISPLAY" "$SCREEN_GEOMETRY"') && [[ "$out" == ":0 1280x800x24" ]] \
         && pass "display defaults: $out" || fail "display defaults wrong: $out"
 
