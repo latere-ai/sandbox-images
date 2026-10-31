@@ -8,8 +8,8 @@
 ARG BASE_IMAGE=sandbox-base:latest
 FROM ${BASE_IMAGE}
 
-ARG CLAUDE_CODE_VERSION=2.1.280
-ARG CODEX_VERSION=0.144.1
+ARG CLAUDE_CODE_VERSION=2.1.316
+ARG CODEX_VERSION=0.166.0
 
 USER root
 # The base image points NPM_CONFIG_PREFIX at the agent user's home for
