@@ -51,10 +51,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The build does not run it: under QEMU, as when one platform is built on
 # another, uv crashes with a segmentation fault, which it does not do on
 # its own platform. test.sh runs it.
-ARG LIBPYSAL_VERSION=4.15.1
-ARG PINGOUIN_VERSION=0.7.0
+ARG LIBPYSAL_VERSION=4.13.0
+ARG PINGOUIN_VERSION=0.6.1
 ARG PANDAS_FLAVOR_VERSION=0.8.1
-ARG SPREG_VERSION=1.9.1
+ARG SPREG_VERSION=1.9.0
 ARG UV_VERSION=0.13.6
 RUN pip install --no-deps --no-cache-dir \
         "libpysal==${LIBPYSAL_VERSION}" \
