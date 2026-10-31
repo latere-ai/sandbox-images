@@ -36,8 +36,8 @@ ENV LC_ALL=en_US.UTF-8
 # index (https://go.dev/dl/?mode=json) and must be updated in the same
 # commit as GO_VERSION; the build fails loudly if they drift.
 ARG GO_VERSION=1.27.3
-ARG GO_SHA256_amd64=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
-ARG GO_SHA256_arm64=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda
+ARG GO_SHA256_amd64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+ARG GO_SHA256_arm64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
 RUN ARCH=$(dpkg --print-architecture) && \
     case "$ARCH" in \
         amd64) SHA="${GO_SHA256_amd64}" ;; \
