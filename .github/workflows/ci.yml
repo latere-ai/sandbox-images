@@ -29,7 +29,7 @@ jobs:
       any1: ${{ steps.compute.outputs.any1 }}
       any2: ${{ steps.compute.outputs.any2 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lint catalog
         run: |
           ./catalog.sh lint
@@ -47,7 +47,7 @@ jobs:
             ./catalog.sh filters
             echo 'CATALOG_EOF'
           } >> "$GITHUB_OUTPUT"
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: ${{ steps.gen.outputs.filters }}
@@ -74,11 +74,11 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.stage0) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Smoke build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           platforms: ${{ matrix.image.platforms }}
@@ -98,15 +98,15 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.stage1) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Smoke build
         # FROM the published :latest of the in-repo parent. Nothing is
         # pushed here, so a moving :latest costs at most a stale smoke
         # build; the release pipeline resolves the parent by the digest
         # it just pushed instead (catalog.sh baseref).
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           platforms: ${{ matrix.image.platforms }}
@@ -128,11 +128,11 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.stage2) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Smoke build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           platforms: ${{ matrix.image.platforms }}

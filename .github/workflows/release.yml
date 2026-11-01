@@ -49,7 +49,7 @@ jobs:
       any2: ${{ steps.compute.outputs.any2 }}
       push: ${{ steps.compute.outputs.push }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lint catalog
         run: |
           ./catalog.sh lint
@@ -62,7 +62,7 @@ jobs:
             ./catalog.sh filters
             echo 'CATALOG_EOF'
           } >> "$GITHUB_OUTPUT"
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
         with:
@@ -108,12 +108,12 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.stage0) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -121,7 +121,7 @@ jobs:
 
       - name: Compute image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.catalog.outputs.registry }}/${{ matrix.image.name }}
           tags: |
@@ -131,7 +131,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           platforms: ${{ matrix.image.platforms }}
@@ -149,7 +149,7 @@ jobs:
             '{name: $name, digest: $digest}' > "/tmp/digest/${{ matrix.image.name }}.json"
       - name: Upload digest
         if: needs.catalog.outputs.push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image.name }}
           path: /tmp/digest/*.json
@@ -165,19 +165,19 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.stage1) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download parent digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           path: digests
@@ -201,7 +201,7 @@ jobs:
 
       - name: Compute image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.catalog.outputs.registry }}/${{ matrix.image.name }}
           tags: |
@@ -212,7 +212,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           platforms: ${{ matrix.image.platforms }}
@@ -232,7 +232,7 @@ jobs:
             '{name: $name, digest: $digest}' > "/tmp/digest/${{ matrix.image.name }}.json"
       - name: Upload digest
         if: needs.catalog.outputs.push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image.name }}
           path: /tmp/digest/*.json
@@ -249,19 +249,19 @@ jobs:
       matrix: ${{ fromJSON(needs.catalog.outputs.stage2) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download parent digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           path: digests
@@ -281,7 +281,7 @@ jobs:
 
       - name: Compute image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ needs.catalog.outputs.registry }}/${{ matrix.image.name }}
           tags: |
@@ -292,7 +292,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           platforms: ${{ matrix.image.platforms }}
@@ -312,7 +312,7 @@ jobs:
             '{name: $name, digest: $digest}' > "/tmp/digest/${{ matrix.image.name }}.json"
       - name: Upload digest
         if: needs.catalog.outputs.push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image.name }}
           path: /tmp/digest/*.json
@@ -337,15 +337,15 @@ jobs:
       && (needs.build-stage2.result == 'success' || needs.build-stage2.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
