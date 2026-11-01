@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # computer-use stacks. Pin the version so image rebuilds are reproducible.
 # `chromium` on PATH names this build: the link replaces a command of that
 # name the base image may have, which would otherwise stop the build here.
-ARG CFT_VERSION=128.0.6613.119
+ARG CFT_VERSION=156.0.8078.80
 ARG TARGETARCH
 RUN set -eux; \
     arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
