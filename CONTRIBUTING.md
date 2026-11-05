@@ -122,11 +122,24 @@ where:
 
 ## Releasing
 
-Releases are tag-driven and handled by `.github/workflows/release.yml`.
+Releases are tag-driven and handled by `.github/workflows/release.yml`. With
+the release's changes written under `## Unreleased` in `CHANGELOG.md`, cut it
+from a clean checkout of `main` at origin's tip:
+
+```sh
+go tool lateregate release vX.Y.Z
+```
+
+The command moves the notes into a `## vX.Y.Z` section, commits
+`changelog: vX.Y.Z`, and pushes that commit and an annotated tag in one push,
+which starts the pipeline below. It refuses while CI is red on `main`. No file
+in this repository carries the version, so nothing else is rewritten; the Go
+toolchain is only for this command, and the root `go.mod` pins `lateregate`
+and nothing else.
 
 ```mermaid
 flowchart LR
-  tag(["git tag vX.Y.Z"]) --> base
+  tag(["vX.Y.Z tag pushed"]) --> base
   subgraph chain["build stages, by parent depth"]
     direction TB
     base["sandbox-base<br/>linux/amd64, linux/arm64"]
