@@ -5,11 +5,20 @@ name: CI
 # Images build in three FROM-depth stages (lint caps chains at depth 2).
 # Nothing here publishes; releases are tag-driven in release.yml.
 
+# A push or pull request that changes only specs or markdown starts no run,
+# because no build or test here reads them. `lateregate release` runs the whole
+# bar, the spec tree included, before every tag.
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "specs/**"
+      - "**.md"
   pull_request:
+    paths-ignore:
+      - "specs/**"
+      - "**.md"
 
 permissions:
   contents: read
