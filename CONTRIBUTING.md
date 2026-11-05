@@ -31,7 +31,7 @@ make base       # build one image; its parent chain builds first
 make gui
 make harness
 make science
-make test       # run the catalog tooling tests
+make tools-test       # run the catalog tooling tests
 make clean      # remove the locally built images
 make hooks      # point git at .githooks
 ```
@@ -48,7 +48,7 @@ passed as the `BASE_IMAGE` build argument.
 
 | Command | What it covers | Needs |
 | --- | --- | --- |
-| `make test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, reading package lists out of images, and `catalog.json` composition, against the live catalog and fixtures; the base image's `chromium` and `playwright` commands (the flags a container needs, and a home or a browser directory that cannot be written) and its `sudo` (which apt installs succeed with nothing run where sudo cannot run, and that every other request reaches the system's sudo as given); the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
+| `make tools-test` | the catalog tooling: lint rules, change filters, build matrices, parent resolution, reading package lists out of images, and `catalog.json` composition, against the live catalog and fixtures; the base image's `chromium` and `playwright` commands (the flags a container needs, and a home or a browser directory that cannot be written) and its `sudo` (which apt installs succeed with nothing run where sudo cannot run, and that every other request reaches the system's sudo as given); the GUI image's `chromium-launch` (the profile under a read-only home, and a proxy credential handed to Chromium through an extension rather than its command line); and its `gui-browser` and `gui-desktop` commands (what each starts, a restart after an exit, a clean stop, and the reason when there is no display) | `yq`, `jq` |
 | `bash gui/entrypoint_test.sh` | VNC password provisioning in the GUI image. It sources the script directly and needs no container | `bash` |
 | `bash test.sh [tag] [image...]` | the published images at a tag (default `latest`), all of them or the ones named: each image pulls and runs, and its runtime contract holds (tools on `PATH`, user, home, working directory, prompt, the base image's Python libraries, PDF tools, fonts, `pip install`, and headless browser, display defaults, pinned CLI versions, the science image's Python and R packages, an `lme4` fit, `install.packages()` of a built package, and its package list). The browser and science checks also run as a hosted sandbox runs an image: a read-only root file system with a writable `/tmp`, a volume at `/workspace`, `HOME` under `/tmp`, no new privileges, and no capabilities | a container runtime, `yq`, `jq`, and network access from the containers, because the `pip install` and `uv pip install` checks reach PyPI, the `install.packages()` check Posit Package Manager, the Puppeteer and Playwright project checks the npm registry, and those Playwright projects download their browsers |
 
@@ -67,7 +67,7 @@ LOCAL=1 bash test.sh latest sandbox-base
 `RUNTIME` and `REGISTRY` override the runtime and the registry.
 
 On every push to `main` and every pull request, CI runs `./catalog.sh lint`
-and `make test`, and smoke-builds, without pushing, each image whose context
+and `make tools-test`, and smoke-builds, without pushing, each image whose context
 directory changed together with the images built on it. A child image in that
 smoke build uses its parent's published `latest`, not the parent built in the
 same run.
@@ -83,7 +83,7 @@ on a local build before tagging a change to what an image holds, and run
    `FROM ${BASE_IMAGE}`, as `gui/` and `harness/` do.
 2. Add an entry to `catalog.yaml`. List order is build order, so a parent
    comes before its children.
-3. Run `./catalog.sh lint` and `make test`.
+3. Run `./catalog.sh lint` and `make tools-test`.
 4. Add checks for the image's runtime contract to `test.sh`.
 
 No Makefile or workflow edit is needed. `./catalog.sh lint` refuses a catalog

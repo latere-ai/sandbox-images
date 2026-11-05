@@ -6,7 +6,7 @@ RUNTIME := podman
 # image as <name>:latest and <registry>/<name>:latest.
 CONTEXTS := $(shell yq -r '.images[].context' catalog.yaml)
 
-.PHONY: all test clean hooks $(CONTEXTS)
+.PHONY: all tools-test clean hooks $(CONTEXTS)
 
 all:
 	RUNTIME=$(RUNTIME) ./catalog.sh build
@@ -14,7 +14,7 @@ all:
 $(CONTEXTS):
 	RUNTIME=$(RUNTIME) ./catalog.sh build $@
 
-test:
+tools-test:
 	bash catalog_test.sh
 	bash base/browser_test.sh
 	bash base/sudo_test.sh
