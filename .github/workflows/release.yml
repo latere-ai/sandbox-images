@@ -30,14 +30,32 @@ on:
 permissions:
   contents: read
   packages: write
+  # The publishing runs first check that ci.yml passed on the commit.
+  actions: read
 
 jobs:
+  # A run that publishes (a tag, a published release, a manual rebuild)
+  # first checks that ci.yml passed on the commit it publishes, and builds
+  # nothing otherwise. A push to main publishes nothing, so it passes over
+  # the check and runs the build as its smoke. The job itself always runs:
+  # a skipped job would skip every job after it.
+  verified:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
+      - uses: latere-ai/ci/actions/verified-commit@v1
+        if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
+        with:
+          verify_workflow: ci.yml
+
   # Lint catalog.yaml, then derive the change filters and the per-stage
   # build matrices (stage 0 = no `from`, stage N = FROM a stage N-1
   # image) from it. Branch pushes build only changed images;
   # release-producing events build everything. Stages are jobs so a
   # child never builds concurrently with the parent it FROMs.
   catalog:
+    needs: verified
     runs-on: ubuntu-latest
     outputs:
       registry: ${{ steps.compute.outputs.registry }}
