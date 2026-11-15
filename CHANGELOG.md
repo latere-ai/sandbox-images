@@ -5,6 +5,8 @@ work in them, one section per release.
 
 ## Unreleased
 
+- Built with Go 1.27.4, which fixes GO-2026-6859.
+
 ## v0.0.25 - 2026-10-21
 
 ### Fixed
